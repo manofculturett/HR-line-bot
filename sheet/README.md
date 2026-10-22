@@ -22,7 +22,7 @@ Put the id in the Apps Script Script Property `SHEET_ID` (see `../apps-script/RE
 |---|---|---|
 | `HR_MAIN` | HR's dashboard (A:F) **and** the CONFIG block (T:U) | HR reads and edits; formulas only — the script writes nothing |
 | `EMPLOYEES_LOG` | the roster, A:H | HR edits — **contains credentials, HR-only** |
-| `DATA` | three append-only blocks: punches A:E, machine log H:L, errors N:P | machine writes, HR reads |
+| `DATA` | four append-only blocks: punches A:E, log H:L, errors N:P, location checks Q:V | machine writes, HR reads |
 
 There is no separate Config/Log/Error tab — those live inside `HR_MAIN` and `DATA` to
 match the three tabs already in the spreadsheet.
@@ -48,6 +48,11 @@ match the three tabs already in the spreadsheet.
 10                                       HR_EMAIL       (your address)
 11                                       DIGEST_TIME    09:15
 12                                       EMAIL_ENABLED  TRUE          ← FALSE stops the digest
+13                                       OFFICE_LAT     13.7563       ← v1.1 location check
+14                                       OFFICE_LNG     100.5018
+15                                       GEO_RADIUS_M   150
+16                                       GEO_MAX_ACC_M  150
+17                                       GEO_MODE       OFF           ← OFF | WARN | BLOCK
 ```
 
 - Dashboard rows 5–24 are **formulas only** — see [`dashboard.md`](dashboard.md).
@@ -55,6 +60,10 @@ match the three tabs already in the spreadsheet.
   rows freely. Named ranges `WORK_START` and `LATE_GRACE_MIN` point at `U6` and `U7`.
 - `U` is formatted as **plain text** — otherwise Sheets parses `09:00` into a time value
   and the script sees a date instead of `"09:00"`.
+- The scan is **last-row-wins** for a duplicated key. If a value looks ignored, look for a
+  second row with the same key further down.
+- The geo keys (13–17) are new in v1.1 and may be absent — missing keys fall back to the
+  defaults in `config.gs`, where `GEO_MODE` is `OFF` (shadow mode).
 
 ## `EMPLOYEES_LOG` (A:H)
 
@@ -75,13 +84,14 @@ Rows 2–4 currently hold **test employees**. Delete **only rows with an empty
 
 ## `DATA`
 
-Three independent append-only blocks side by side:
+Four independent append-only blocks side by side:
 
 | block | cols | header |
 |---|---|---|
 | punch ledger | A:E | `ts, employee_id, event(in\|out), source, note` |
 | machine log | H:L | `event_id, ts, user_id, action, status` |
 | errors | N:P | `ts, context, message` |
+| location checks | Q:V | `ts, employee_id, event, lat, lng, acc_m, dist_m, verdict` |
 
 > ⚠️ Because three blocks share one tab, a row is "taken" only if **that block** is
 > occupied. The code appends with a block-aware `appendToBlock_()`, never
@@ -94,6 +104,20 @@ correction row**, or the day can no longer be reconstructed.
 `ts` must be a real datetime value (the script writes `new Date()`), or the dashboard
 formulas will not match it.
 
+### Reading the punch columns
+
+- `source` = `line` for a plain rich-menu tap, `liff-geo` for a punch that arrived with a
+  location. Filtering `source = line` lists every punch nobody verified.
+- `note` carries `late 27m` and/or a geo verdict: `geo:ok 34m`, `geo:far 1200m`,
+  `geo:weak_fix 42m acc300m`, `geo:no_fix`.
+- `verdict` in Q:V is one of `ok`, `far`, `weak_fix`, `no_fix`, `no_office`. `weak_fix`
+  means the phone's accuracy was too poor to judge — indoors that is normal, and it is
+  **not** evidence of anything.
+- Coordinates are rounded to 4 decimals (~11 m), one row per punch attempt. There is no
+  continuous tracking anywhere in this system.
+- A location is **evidence about a phone, not about a person**: it can be spoofed by a
+  mock-location app. Treat a `far` verdict as a question for HR, not a conclusion.
+
 Rows 2–3 hold **sample punches** (marked `SAMPLE` in the note) so the dashboard shows
 something today. They are fake and safe to delete. A punch whose note is **empty** is
 real — never delete it. (Rule of thumb: `SAMPLE` in the note = fake; `line_user_id`
@@ -103,3 +127,7 @@ present = a real binding.)
 
 `EMPLOYEES_LOG` holds the one-time codes — credentials. Share the spreadsheet with HR
 only; staff must never have access. Their only surface is LINE.
+
+Location is personal data under Thailand's PDPA: collect it only at punch time, keep this
+sheet HR-only, tell staff the purpose, and set a retention rule for `DATA!Q:V` (for
+example, delete rows older than 90 days).

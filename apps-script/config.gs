@@ -5,10 +5,12 @@
  *
  *   HR_MAIN        HR's screen — dashboard in A:F, CONFIG block in T:U
  *   EMPLOYEES_LOG  the roster, A:H
- *   DATA           three independent append-only blocks, side by side:
+ *   DATA           four independent append-only blocks, side by side:
  *                    A:E  punch ledger  (ts, employee_id, event, source, note)
  *                    H:L  machine log   (event_id, ts, user_id, action, status)
  *                    N:P  errors        (ts, context, message)
+ *                    Q:V  location checks (ts, employee_id, event, lat, lng, acc_m,
+ *                                          dist_m, verdict) — LIFF punches only
  *
  * Secrets live in Script Properties (Project Settings), never in the sheet and never in
  * git. HR-facing settings live in HR_MAIN!T:U so HR can change them without a deploy.
@@ -22,13 +24,19 @@ var TABS = {
 };
 
 /**
- * Append-only blocks. `DATA` deliberately holds three of them side by side, so every
+ * Append-only blocks. `DATA` deliberately holds four of them side by side, so every
  * append targets a BLOCK, never "the bottom of the sheet" — see sheets.appendToBlock_.
+ *
+ * GEO was added to the far right (Q:V) on purpose: the punch block A:E cannot simply be
+ * widened, because F,G sit inside the gap before LOG at H, and moving LOG/ERROR would
+ * mean rewriting every existing row. A block to the right costs nothing and migrates
+ * nothing. HR_MAIN reads DATA!A:C only, so no dashboard formula changes either.
  */
 var BLOCKS = {
   ATTENDANCE: { tab: 'DATA',          col: 0,  width: 5 },
   LOG:        { tab: 'DATA',          col: 7,  width: 5 },
   ERROR:      { tab: 'DATA',          col: 13, width: 3 },
+  GEO:        { tab: 'DATA',          col: 16, width: 8 },
   EMPLOYEES:  { tab: 'EMPLOYEES_LOG', col: 0,  width: 8 }
 };
 
@@ -37,7 +45,8 @@ var COLS = {
   EMPLOYEES:  { ID: 0, NAME: 1, DEPT: 2, LINK_CODE: 3, LINE_USER_ID: 4, LINK_STATUS: 5, ACTIVE: 6, NOTE: 7 },
   ATTENDANCE: { TS: 0, EMPLOYEE_ID: 1, EVENT: 2, SOURCE: 3, NOTE: 4 },
   LOG:        { EVENT_ID: 0, TS: 1, USER_ID: 2, ACTION: 3, STATUS: 4 },
-  ERROR:      { TS: 0, CONTEXT: 1, MESSAGE: 2 }
+  ERROR:      { TS: 0, CONTEXT: 1, MESSAGE: 2 },
+  GEO:        { TS: 0, EMPLOYEE_ID: 1, EVENT: 2, LAT: 3, LNG: 4, ACC: 5, DIST: 6, VERDICT: 7 }
 };
 
 /**
@@ -62,7 +71,16 @@ var CONFIG_DEFAULTS = {
   WORK_DAYS: 'MON,TUE,WED,THU,FRI',
   HR_EMAIL: '',
   DIGEST_TIME: '09:15',
-  EMAIL_ENABLED: 'TRUE'
+  EMAIL_ENABLED: 'TRUE',
+
+  // Location check (LIFF punches only; postback punches stay unverified).
+  // GEO_MODE starts OFF so a bad GPS fix can never block an employee at the door:
+  //   OFF = record the verdict only, WARN = also warn the employee, BLOCK = refuse.
+  OFFICE_LAT: '',
+  OFFICE_LNG: '',
+  GEO_RADIUS_M: '150',
+  GEO_MAX_ACC_M: '150',
+  GEO_MODE: 'OFF'
 };
 
 /** A required secret, or a loud failure at startup rather than a silent 401 later. */

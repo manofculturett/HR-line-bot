@@ -15,11 +15,8 @@
 var DEDUPE_TTL_SEC = 600;
 
 function doPost(e) {
-  // 1. Auth: secret query param. Reject before touching the body.
-  var secret = PropertiesService.getScriptProperties().getProperty('WEBHOOK_SECRET');
-  if (!e || !e.parameter || e.parameter.k !== secret) {
-    console.warn('Rejected: bad or missing ?k=');
-    return textOut_(JSON.stringify({ ok: false, error: 'unauthorized' }));
+  if (!e || !e.postData || !e.postData.contents) {
+    return textOut_(JSON.stringify({ ok: false, error: 'empty' }));
   }
 
   var payload;
@@ -28,6 +25,27 @@ function doPost(e) {
   } catch (err) {
     console.error('Bad JSON body: ' + err);
     return textOut_(JSON.stringify({ ok: false, error: 'invalid_json' }));
+  }
+
+  // Route 1 — the LIFF punch page. Authenticated by a LINE ID token, NOT by ?k=: the page
+  // is public static hosting, so the webhook secret must never appear in it. A forged
+  // idToken cannot pass verifyLiffIdToken_, which is the same guarantee a signed webhook
+  // gives. See liff.gs.
+  if (payload && payload.idToken) {
+    try {
+      return textOut_(JSON.stringify(handleLiffPunch_(payload)));
+    } catch (err) {
+      logError_('liff_doPost', err);
+      return textOut_(JSON.stringify({ ok: false, error: 'server_error' }));
+    }
+  }
+
+  // Route 2 — the LINE webhook. Auth: secret query param (doPost cannot read headers, so
+  // X-Line-Signature is unavailable — see the header of this file).
+  var secret = PropertiesService.getScriptProperties().getProperty('WEBHOOK_SECRET');
+  if (!e.parameter || e.parameter.k !== secret) {
+    console.warn('Rejected: bad or missing ?k=');
+    return textOut_(JSON.stringify({ ok: false, error: 'unauthorized' }));
   }
 
   var events = payload.events || [];
@@ -48,8 +66,19 @@ function doPost(e) {
   return textOut_(JSON.stringify({ ok: true }));
 }
 
-/** Health check: GET /exec?k=<secret> → tells you which deployment is live. */
+/**
+ * GET serves two things.
+ *
+ * 1. The LIFF page's JSONP fallback (`?cb=<fn>&p=<json>`). A <script> tag is not subject
+ *    to CORS, so this path works even when a cross-origin fetch() from GitHub Pages to
+ *    /exec is refused. doPost stays the primary transport; this is the safety net.
+ * 2. The health check: GET /exec?k=<secret> → tells you which deployment is live.
+ */
 function doGet(e) {
+  if (e && e.parameter && e.parameter.cb) {
+    return jsonpOut_(e.parameter.cb, e.parameter.p);
+  }
+
   var secret = PropertiesService.getScriptProperties().getProperty('WEBHOOK_SECRET');
   if (!e || !e.parameter || e.parameter.k !== secret) {
     return textOut_(JSON.stringify({ ok: false, error: 'unauthorized' }));
@@ -249,4 +278,30 @@ function isDuplicate_(eventId) {
 
 function textOut_(body) {
   return ContentService.createTextOutput(body).setMimeType(ContentService.MimeType.JSON);
+}
+
+/**
+ * Reply `callback(<json>)` so a <script> tag can receive the LIFF punch result without
+ * CORS. The callback name is attacker-suppliable query input echoed into JavaScript, so it
+ * is restricted to a plain dotted identifier — anything else is refused rather than
+ * reflected.
+ */
+function jsonpOut_(callback, payloadJson) {
+  var cb = String(callback || '');
+  if (!/^[A-Za-z_$][A-Za-z0-9_$.]{0,60}$/.test(cb)) {
+    return textOut_(JSON.stringify({ ok: false, error: 'bad_callback' }));
+  }
+
+  var result;
+  try {
+    var payload = JSON.parse(String(payloadJson || '{}'));
+    result = (payload && payload.idToken)
+      ? handleLiffPunch_(payload)
+      : { ok: false, error: 'unauthorized', text: MSG.GEO_FAILED };
+  } catch (err) {
+    logError_('jsonpOut_', err);
+    result = { ok: false, error: 'server_error', text: MSG.GEO_FAILED };
+  }
+  return ContentService.createTextOutput(cb + '(' + JSON.stringify(result) + ')')
+    .setMimeType(ContentService.MimeType.JAVASCRIPT);
 }
