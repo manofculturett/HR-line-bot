@@ -433,14 +433,23 @@ and audited clean. No server to keep alive and nothing hosted — no downtime, �
 
 **Not built:** the forgot-to-check-out report, a quota guard, and a 09:00 load test.
 
-**Location check — built, not yet deployed (v1.1, `feat/liff-geo-punch`).** A LIFF page
-collects the phone's position at punch time, the server verifies the LINE ID token,
-classifies the fix against `OFFICE_LAT/LNG` + `GEO_RADIUS_M`, and writes a verdict row in
-`DATA!Q:V`. `GEO_MODE` defaults to `OFF` (record only) — a bad indoor fix must never
-block a punch. Remaining before use: paste the LIFF id and `/exec` URL into
-`docs/liff/index.html`, enable GitHub Pages (branch `main`, folder `/docs`), publish the
-LINE Login channel, point the rich-menu เข้างาน button at the LIFF URL, `clasp push` +
-`clasp deploy`, and add the five geo keys to `HR_MAIN!T:U`.
+**Location check — built, page deployed, code not (v1.1).** A LIFF page collects the
+phone's position at punch time, the server verifies the LINE ID token, classifies the fix
+against `OFFICE_LAT/LNG` + `GEO_RADIUS_M`, and writes a verdict row in `DATA!Q:V`.
+`GEO_MODE` is `OFF` (record only) — a bad indoor fix must never block a punch.
+
+- Repo published: `github.com/manofculturett/HR-line-bot` (public); `main` carries v1.1
+  and `v1.0.0` is tagged.
+- GitHub Pages is on (`main` / `/docs`), build clean, and
+  `https://manofculturett.github.io/HR-line-bot/liff/` returns 200 and renders — verified
+  in a browser. It currently refuses to run because its two constants are placeholders.
+- The five geo keys are written to `HR_MAIN!T13:U17`; `OFFICE_LAT` / `OFFICE_LNG` are
+  blank on purpose (blank ⇒ verdict `no_office`, never a false `far`).
+
+Remaining before real use: paste the LIFF id and `/exec` URL into `docs/liff/index.html`;
+publish the LINE Login channel; `clasp push` + `clasp deploy -i <same deployment>`;
+point the rich-menu เข้างาน button at `https://liff.line.me/<LIFF_ID>`; then punch once
+from a phone and check `DATA!Q:V`.
 
 **Open decisions:** whether to move `GEO_MODE` from `OFF` to `WARN` after two weeks of
 shadow data; whether to add a LINE Beacon at the door (the only presence signal a phone
