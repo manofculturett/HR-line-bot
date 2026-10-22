@@ -8,8 +8,8 @@
  *   DATA           four independent append-only blocks, side by side:
  *                    A:E  punch ledger  (ts, employee_id, event, source, note)
  *                    H:L  machine log   (event_id, ts, user_id, action, status)
- *                    N:P  errors        (ts, context, message)
- *                    Q:V  location checks (ts, employee_id, event, lat, lng, acc_m,
+ *                    O:Q  errors        (ts, context, message)
+ *                    S:Z  location checks (ts, employee_id, event, lat, lng, acc_m,
  *                                          dist_m, verdict) — LIFF punches only
  *
  * Secrets live in Script Properties (Project Settings), never in the sheet and never in
@@ -27,16 +27,20 @@ var TABS = {
  * Append-only blocks. `DATA` deliberately holds four of them side by side, so every
  * append targets a BLOCK, never "the bottom of the sheet" — see sheets.appendToBlock_.
  *
- * GEO was added to the far right (Q:V) on purpose: the punch block A:E cannot simply be
- * widened, because F,G sit inside the gap before LOG at H, and moving LOG/ERROR would
- * mean rewriting every existing row. A block to the right costs nothing and migrates
- * nothing. HR_MAIN reads DATA!A:C only, so no dashboard formula changes either.
+ * ⚠️ These columns mirror the header cells that are actually in the live sheet, which is
+ *    the source of truth. The error block sits at O:Q (headers ts / context / message);
+ *    it used to be declared N:P here, one column left of its own header, so every error
+ *    row was written into the empty column beside it. Fixed against the live sheet.
+ *
+ * GEO lives at the far right (S:Z, the last eight columns) for the same reason: no
+ * existing block moves, nothing is migrated, and HR_MAIN only reads DATA!A:C, so no
+ * dashboard formula changes either.
  */
 var BLOCKS = {
   ATTENDANCE: { tab: 'DATA',          col: 0,  width: 5 },
   LOG:        { tab: 'DATA',          col: 7,  width: 5 },
-  ERROR:      { tab: 'DATA',          col: 13, width: 3 },
-  GEO:        { tab: 'DATA',          col: 16, width: 8 },
+  ERROR:      { tab: 'DATA',          col: 14, width: 3 },
+  GEO:        { tab: 'DATA',          col: 18, width: 8 },
   EMPLOYEES:  { tab: 'EMPLOYEES_LOG', col: 0,  width: 8 }
 };
 

@@ -4,7 +4,7 @@
  * Every read-modify-write goes through withLock_(), so concurrent punches cannot
  * interleave. Attendance is append-only: corrections are new rows.
  *
- * ⚠️ DATA holds three blocks side by side (A:E punches, H:L log, N:P errors), so a row
+ * ⚠️ DATA holds four blocks side by side (A:E punches, H:L log, O:Q errors, S:Z geo), so a row
  * is "taken" only if that BLOCK is occupied. Sheet.appendRow() would append at the
  * bottom of the whole sheet and scatter the blocks — always use appendToBlock_.
  *
@@ -159,7 +159,7 @@ function todaysPunches_(employeeId, tz) {
   return out;
 }
 
-/* ---- Log / Error (DATA!H:L and DATA!N:P) ---- */
+/* ---- Log / Error (DATA!H:L and DATA!O:Q) ---- */
 
 function logEvent_(eventId, userId, action, status) {
   try {

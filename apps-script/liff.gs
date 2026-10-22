@@ -103,7 +103,7 @@ function verifyLiffIdToken_(idToken) {
 }
 
 /**
- * One row per location check in DATA!Q:V, written under the same lock as the punch, so
+ * One row per location check in DATA!S:Z, written under the same lock as the punch, so
  * "a punch row carrying geo" and "a geo row" never disagree.
  *
  * Two forms on purpose: appendGeoUnlocked_ is called from inside attendance.gs's existing

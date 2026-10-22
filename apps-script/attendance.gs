@@ -15,7 +15,7 @@
  * @param {Object} cfg       the CONFIG block
  * @param {Object=} geo      geoCheck_() result, or undefined for a plain menu tap.
  *                           A geo punch is recorded with source 'liff-geo' and gets a
- *                           matching row in DATA!Q:V; a plain tap stays 'line' and is
+ *                           matching row in DATA!S:Z; a plain tap stays 'line' and is
  *                           unverified. Both are legal — a punch must never be lost
  *                           because the phone refused to give a location.
  * @returns {string} the reply text.

@@ -84,7 +84,7 @@ hosting is required — do not move the page into HtmlService.
 `doPost` sees a body with `idToken` and takes route 1: verify the token at
 `api.line.me/oauth2/v2.1/verify`, map `sub` → `EMPLOYEES_LOG`, classify the position in
 `geo.gs`, then run the same `punchIn_` / `punchOut_` the buttons use — with a `geo`
-argument that adds `source=liff-geo`, a note like `geo:far 1200m`, and a row in `DATA!Q:V`.
+argument that adds `source=liff-geo`, a note like `geo:far 1200m`, and a row in `DATA!S:Z`.
 
 `GEO_MODE` in `HR_MAIN!T:U` decides what a failed check does: `OFF` (default) records only,
 `WARN` also tells the employee, `BLOCK` refuses the punch.
@@ -103,7 +103,7 @@ curl -sL "https://script.google.com/macros/s/<ID>/exec?cb=cb&p=%7B%22idToken%22%
 ```
 
 A real end-to-end check needs a phone: open the LIFF URL from the rich menu inside LINE,
-tap เข้างาน, and confirm both the reply text and a new `DATA!Q:V` row.
+tap เข้างาน, and confirm both the reply text and a new `DATA!S:Z` row.
 
 ## Manual verification (do not trust the Verify button)
 

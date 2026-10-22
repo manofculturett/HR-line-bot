@@ -118,7 +118,7 @@ rich menu "เข้างาน" (URL action)
       verify the token at api.line.me/oauth2/v2.1/verify  → userId
       geoCheck_()  →  ok | far | weak_fix | no_fix
       punchIn_() / punchOut_()   — the same code the menu buttons use
-  → text back into the page, plus a row in DATA!Q:V
+  → text back into the page, plus a row in DATA!S:Z
 ```
 
 Trust is split deliberately. **Who** is verified: the ID token is checked server-side, which
@@ -311,7 +311,7 @@ One spreadsheet — **`Customer`**, id `1Ek-vacbfgWq11I2WhLvz6yc5WAD7IFojXRnnGVd
 |---|---|---|
 | `HR_MAIN` | dashboard `A:F` (formulas) + CONFIG `T:U` | formulas only; HR edits CONFIG |
 | `EMPLOYEES_LOG` | roster `A:H` | HR, plus the script on registration |
-| `DATA` | punches `A:E`, log `H:L`, errors `N:P`, location `Q:V` | script only |
+| `DATA` | punches `A:E`, log `H:L`, errors `O:Q`, location `S:Z` | script only |
 
 Because four blocks share `DATA`, appends are **block-aware** (`appendToBlock_`), never
 `Sheet.appendRow()` — that would append at the bottom of the whole sheet and scatter them. The
@@ -435,7 +435,7 @@ and audited clean. No server to keep alive and nothing hosted — no downtime, �
 
 **Location check — built, page deployed, code not (v1.1).** A LIFF page collects the
 phone's position at punch time, the server verifies the LINE ID token, classifies the fix
-against `OFFICE_LAT/LNG` + `GEO_RADIUS_M`, and writes a verdict row in `DATA!Q:V`.
+against `OFFICE_LAT/LNG` + `GEO_RADIUS_M`, and writes a verdict row in `DATA!S:Z`.
 `GEO_MODE` is `OFF` (record only) — a bad indoor fix must never block a punch.
 
 - Repo published: `github.com/manofculturett/HR-line-bot` (public); `main` carries v1.1
@@ -449,7 +449,7 @@ against `OFFICE_LAT/LNG` + `GEO_RADIUS_M`, and writes a verdict row in `DATA!Q:V
 Remaining before real use: paste the LIFF id and `/exec` URL into `docs/liff/index.html`;
 publish the LINE Login channel; `clasp push` + `clasp deploy -i <same deployment>`;
 point the rich-menu เข้างาน button at `https://liff.line.me/<LIFF_ID>`; then punch once
-from a phone and check `DATA!Q:V`.
+from a phone and check `DATA!S:Z`.
 
 **Open decisions:** whether to move `GEO_MODE` from `OFF` to `WARN` after two weeks of
 shadow data; whether to add a LINE Beacon at the door (the only presence signal a phone

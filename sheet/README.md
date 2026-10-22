@@ -22,7 +22,7 @@ Put the id in the Apps Script Script Property `SHEET_ID` (see `../apps-script/RE
 |---|---|---|
 | `HR_MAIN` | HR's dashboard (A:F) **and** the CONFIG block (T:U) | HR reads and edits; formulas only — the script writes nothing |
 | `EMPLOYEES_LOG` | the roster, A:H | HR edits — **contains credentials, HR-only** |
-| `DATA` | four append-only blocks: punches A:E, log H:L, errors N:P, location checks Q:V | machine writes, HR reads |
+| `DATA` | four append-only blocks: punches A:E, log H:L, errors O:Q, location checks S:Z | machine writes, HR reads |
 
 There is no separate Config/Log/Error tab — those live inside `HR_MAIN` and `DATA` to
 match the three tabs already in the spreadsheet.
@@ -90,8 +90,8 @@ Four independent append-only blocks side by side:
 |---|---|---|
 | punch ledger | A:E | `ts, employee_id, event(in\|out), source, note` |
 | machine log | H:L | `event_id, ts, user_id, action, status` |
-| errors | N:P | `ts, context, message` |
-| location checks | Q:V | `ts, employee_id, event, lat, lng, acc_m, dist_m, verdict` |
+| errors | O:Q | `ts, context, message` |
+| location checks | S:Z | `ts, employee_id, event, lat, lng, acc_m, dist_m, verdict` |
 
 > ⚠️ Because three blocks share one tab, a row is "taken" only if **that block** is
 > occupied. The code appends with a block-aware `appendToBlock_()`, never
@@ -110,7 +110,7 @@ formulas will not match it.
   location. Filtering `source = line` lists every punch nobody verified.
 - `note` carries `late 27m` and/or a geo verdict: `geo:ok 34m`, `geo:far 1200m`,
   `geo:weak_fix 42m acc300m`, `geo:no_fix`.
-- `verdict` in Q:V is one of `ok`, `far`, `weak_fix`, `no_fix`, `no_office`. `weak_fix`
+- `verdict` in S:Z is one of `ok`, `far`, `weak_fix`, `no_fix`, `no_office`. `weak_fix`
   means the phone's accuracy was too poor to judge — indoors that is normal, and it is
   **not** evidence of anything.
 - Coordinates are rounded to 4 decimals (~11 m), one row per punch attempt. There is no
@@ -129,5 +129,5 @@ present = a real binding.)
 only; staff must never have access. Their only surface is LINE.
 
 Location is personal data under Thailand's PDPA: collect it only at punch time, keep this
-sheet HR-only, tell staff the purpose, and set a retention rule for `DATA!Q:V` (for
+sheet HR-only, tell staff the purpose, and set a retention rule for `DATA!S:Z` (for
 example, delete rows older than 90 days).
