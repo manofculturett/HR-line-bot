@@ -121,6 +121,11 @@ rich menu "เข้างาน" (URL action)
   → text back into the page, plus a row in DATA!S:Z
 ```
 
+The page shows both punches and a read-only "สถานะวันนี้" panel (action `me:today`, the
+same token the rich-menu status button sends — it writes nothing). Only the two punches
+carry a location; registration stays a chat flow and the menu's status button still answers
+in the chat.
+
 Trust is split deliberately. **Who** is verified: the ID token is checked server-side, which
 is as strong as a signed webhook's `userId` and keeps the `?k=` secret out of public static
 hosting. **Where** is self-reported by the phone, so it is evidence, not proof — a

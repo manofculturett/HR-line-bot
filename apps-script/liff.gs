@@ -42,12 +42,20 @@ function handleLiffPunch_(payload) {
   }
 
   var action = actionOf_(payload.action);
-  if (action !== 'in' && action !== 'out') {
+  if (action !== 'in' && action !== 'out' && action !== 'today') {
     return { ok: false, error: 'bad_action', text: MSG.NOT_UNDERSTOOD };
   }
 
   var cfg = getConfig_();
   var empId = employee.values[COLS.EMPLOYEES.ID];
+
+  // Read-only: the "today" view needs no location, writes no punch and no geo row. It is
+  // here rather than as a separate endpoint because the page already has a verified
+  // identity for this request — a second route would need a second auth path.
+  if (action === 'today') {
+    return { ok: true, action: 'today', text: todayStatus_(employee, cfg) };
+  }
+
   var geo = geoCheck_(cfg, payload.lat, payload.lng, payload.acc);
 
   // BLOCK is the only setting that refuses a punch — and it is the one that breaks people

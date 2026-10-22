@@ -75,9 +75,23 @@ hosting is required — do not move the page into HtmlService.
 5. Put `LIFF_ID` and `LIFF_CHANNEL_ID` in Script Properties (table above).
 6. Paste the same LIFF id and this project's `/exec` URL into the two constants at the top
    of `docs/liff/index.html`, commit, and let Pages redeploy.
-7. Rich menu → the **เข้างาน** button becomes a **URL action** pointing at
-   `https://liff.line.me/<LIFF_ID>`. The postback action keeps working; a postback punch is
-   simply recorded without a location.
+7. Rich menu → **only the two actions that need a location become URL actions**:
+
+   | button | action type | why |
+   |---|---|---|
+   | เข้างาน | URL → `https://liff.line.me/<LIFF_ID>` | punch in, with the location check |
+   | เลิกงาน | URL → `https://liff.line.me/<LIFF_ID>` | punch out, with the location check |
+   | ลงทะเบียน | keep as postback / text | registration is a chat state machine; it needs no location and the page cannot do it |
+   | สถานะของฉัน | keep as postback | instant reply in the chat — and the LIFF page shows the same summary in its own panel |
+
+   Both location buttons point at the same page, which shows the two punches plus a
+   read-only "สถานะวันนี้" panel (action `me:today`, the same token the menu button sends;
+   it writes nothing). Check-out gets the same treatment as check-in on purpose: the hours
+   on the dashboard come from the `out` row, so verifying only the morning verifies only
+   half the day.
+
+   A postback punch keeps working and is recorded without a location (`source=line`), so
+   an employee whose phone refuses to give a position still punches — just unverified.
 
 ### What the server does with a LIFF request
 

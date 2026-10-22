@@ -56,6 +56,16 @@
   button.act:active { background: var(--line-dark); }
   button.act.out:active { background: #eefaf1; }
   button.act:disabled { opacity: .45; }
+  .today-head {
+    display: flex; align-items: center; justify-content: space-between;
+    color: var(--muted); font-size: 13px; margin-bottom: 6px;
+  }
+  button.ghost {
+    border: 0; background: none; color: var(--line-dark); font-family: inherit;
+    font-size: 13px; font-weight: 600; padding: 6px 2px;
+  }
+  button.ghost:disabled { opacity: .45; }
+  #today { font-size: 15px; white-space: pre-wrap; word-break: break-word; }
   #status {
     white-space: pre-wrap; word-break: break-word; font-size: 15px;
     border-radius: 14px; padding: 14px 16px; background: #eef1f5; color: var(--ink);
@@ -85,6 +95,14 @@
   <button class="act out" id="btnOut" disabled>เลิกงาน</button>
 </div>
 
+<div class="card">
+  <div class="today-head">
+    <span>สถานะวันนี้</span>
+    <button class="ghost" id="btnStatus" disabled>ตรวจสอบอีกครั้ง</button>
+  </div>
+  <div id="today">—</div>
+</div>
+
 <div id="status"></div>
 
 <p class="notice">
@@ -108,8 +126,10 @@
   // ── dom ────────────────────────────────────────────────────────────────────
   var elGreeting = document.getElementById('greeting');
   var elStatus   = document.getElementById('status');
+  var elToday    = document.getElementById('today');
   var btnIn      = document.getElementById('btnIn');
   var btnOut     = document.getElementById('btnOut');
+  var btnStatus  = document.getElementById('btnStatus');
 
   var idToken = null;
   var busy = false;
@@ -124,10 +144,27 @@
     elStatus.className = '';
   }
 
+  /**
+   * Read today's summary. Read-only: the server writes nothing for action 'today', and a
+   * failure here must never interrupt a punch — so this never rejects into the punch flow.
+   */
+  function fetchStatus() {
+    if (configMissing() || !idToken) return;
+    elToday.textContent = 'กำลังอ่านสถานะ…';
+    // 'me:today' is the exact token the rich-menu status button sends, so the single
+    // mapping in Code.gs ACTION_ALIASES serves both surfaces. Do not send a bare 'today'.
+    send({ idToken: idToken, action: 'me:today' })
+      .then(function (res) {
+        elToday.textContent = (res && res.text) ? res.text : 'อ่านสถานะไม่ได้';
+      })
+      .catch(function () { elToday.textContent = 'อ่านสถานะไม่ได้'; });
+  }
+
   function setBusy(state, label) {
     busy = state;
     btnIn.disabled = state;
     btnOut.disabled = state;
+    btnStatus.disabled = state;
     if (state && label) {
       btnIn.textContent = 'เข้างาน';
       btnOut.textContent = 'เลิกงาน';
@@ -278,6 +315,7 @@
         if (res && (res.error || res.blocked)) kind = res.blocked ? 'warn' : 'error';
         else if (text.indexOf('⚠️') !== -1) kind = 'warn';
         setStatus(text, kind);
+        fetchStatus();
         elGreeting.textContent = 'ท่านสามารถปิดหน้านี้ได้';
       })
       .catch(function (err) {
@@ -289,12 +327,16 @@
 
   btnIn.addEventListener('click', function () { punch('in'); });
   btnOut.addEventListener('click', function () { punch('out'); });
+  btnStatus.addEventListener('click', fetchStatus);
 
   // ── boot ───────────────────────────────────────────────────────────────────
   function fatal(text) {
     setBusy(false);
+    // setBusy(false) re-enables everything, so all three must be shut again explicitly —
+    // an enabled button that silently does nothing is worse than a disabled one.
     btnIn.disabled = true;
     btnOut.disabled = true;
+    btnStatus.disabled = true;
     elGreeting.textContent = 'ลงเวลางาน';
     setStatus(text, 'error');
   }
@@ -326,6 +368,8 @@
         elGreeting.textContent = 'เลือกการลงเวลา';
         btnIn.disabled = false;
         btnOut.disabled = false;
+        btnStatus.disabled = false;
+        fetchStatus();
       })
       .catch(function (err) {
         console.error(err);
