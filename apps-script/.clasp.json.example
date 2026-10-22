@@ -1,0 +1,14 @@
+{
+  "scriptId": "PASTE_YOUR_SCRIPT_ID_HERE",
+  "rootDir": ".",
+  "filePushOrder": [
+    "config.gs",
+    "messages.gs",
+    "sheets.gs",
+    "line.gs",
+    "attendance.gs",
+    "registration.gs",
+    "triggers.gs",
+    "Code.gs"
+  ]
+}
