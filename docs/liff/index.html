@@ -1,0 +1,341 @@
+<!DOCTYPE html>
+<html lang="th">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>ลงเวลางาน</title>
+<!--
+  LIFF check-in page for HR-line-bot.
+
+  ⚠️ This page must stay on static HTTPS hosting (GitHub Pages). It cannot live in Apps
+     Script: HtmlService runs the page inside an iframe at *.googleusercontent.com, so
+     liff.init() refuses it ("not related to the endpoint URL") and LINE's login screen
+     blocks framing.
+
+  Two values must be filled in below (see README, "LIFF check-in"):
+    LIFF_ID  Line Developers Console → LINE Login channel → LIFF tab
+    GAS_URL  Apps Script: Deploy → Manage deployments → the /exec URL
+
+  Nothing secret belongs in this file. The webhook ?k= secret must never appear here; the
+  request is authenticated by the LINE ID token, which the server verifies with LINE.
+-->
+<style>
+  :root {
+    --line: #06C755;
+    --line-dark: #05a847;
+    --ink: #1f2328;
+    --muted: #6b7280;
+    --bg: #f7f8fa;
+    --card: #fff;
+    --warn: #b45309;
+    --err: #b91c1c;
+  }
+  * { box-sizing: border-box; -webkit-tap-highlight-color: transparent; }
+  html, body { margin: 0; padding: 0; }
+  body {
+    font-family: -apple-system, BlinkMacSystemFont, "Helvetica Neue", "Noto Sans Thai", sans-serif;
+    background: var(--bg);
+    color: var(--ink);
+    padding: 20px 16px calc(24px + env(safe-area-inset-bottom));
+    line-height: 1.5;
+  }
+  h1 { font-size: 20px; margin: 4px 0 2px; }
+  .sub { color: var(--muted); font-size: 13px; margin: 0 0 18px; }
+  .card {
+    background: var(--card); border-radius: 16px; padding: 18px 16px;
+    box-shadow: 0 1px 3px rgba(16,24,40,.08); margin-bottom: 14px;
+  }
+  button.act {
+    display: block; width: 100%; border: 0; border-radius: 14px;
+    background: var(--line); color: #fff; font-size: 17px; font-weight: 700;
+    padding: 18px 16px; margin-bottom: 12px; font-family: inherit;
+    transition: background .15s, opacity .15s;
+  }
+  button.act:last-of-type { margin-bottom: 0; }
+  button.act.out { background: #fff; color: var(--line-dark); box-shadow: inset 0 0 0 2px var(--line); }
+  button.act:active { background: var(--line-dark); }
+  button.act.out:active { background: #eefaf1; }
+  button.act:disabled { opacity: .45; }
+  #status {
+    white-space: pre-wrap; word-break: break-word; font-size: 15px;
+    border-radius: 14px; padding: 14px 16px; background: #eef1f5; color: var(--ink);
+    display: none;
+  }
+  #status.show { display: block; }
+  #status.ok    { background: #eafaf0; color: #065f28; }
+  #status.warn  { background: #fff8e8; color: var(--warn); }
+  #status.error { background: #fdecec; color: var(--err); }
+  .notice { color: var(--muted); font-size: 12px; margin: 18px 4px 0; }
+  .spinner {
+    display: inline-block; width: 14px; height: 14px; margin-right: 8px;
+    border: 2px solid rgba(255,255,255,.4); border-top-color: #fff; border-radius: 50%;
+    animation: spin .8s linear infinite; vertical-align: -2px;
+  }
+  @keyframes spin { to { transform: rotate(360deg); } }
+  code { background: #eef1f5; padding: 1px 5px; border-radius: 4px; font-size: 12px; }
+</style>
+</head>
+<body>
+
+<h1>ลงเวลางาน</h1>
+<p class="sub" id="greeting">กำลังเชื่อมต่อกับ LINE…</p>
+
+<div class="card">
+  <button class="act" id="btnIn" disabled>เข้างาน</button>
+  <button class="act out" id="btnOut" disabled>เลิกงาน</button>
+</div>
+
+<div id="status"></div>
+
+<p class="notice">
+  ระบบจะขอตำแหน่งของท่านเฉพาะตอนกดปุ่มลงเวลา เพื่อตรวจว่าอยู่ในพื้นที่ออฟฟิศ
+  ไม่มีการติดตามตำแหน่งต่อเนื่อง และเก็บพิกัดแบบหยาบ (ประมาณ 10 เมตร)
+</p>
+
+<script src="https://static.line-scdn.net/liff/edge/2/sdk.js"></script>
+<script>
+(function () {
+  'use strict';
+
+  // ── configuration ───────────────────────────────────────────────────────────
+  var LIFF_ID = 'PUT_LIFF_ID_HERE';   // e.g. '2006512345-AbCdEfGh'
+  var GAS_URL = 'PUT_EXEC_URL_HERE';  // e.g. 'https://script.google.com/macros/s/AKfy…/exec'
+
+  // A fix worse than this is refused client-side so the server never gets a 2 km guess.
+  var GEO_OPTS = { enableHighAccuracy: true, timeout: 20000, maximumAge: 0 };
+  var POST_TIMEOUT_MS = 25000;
+
+  // ── dom ────────────────────────────────────────────────────────────────────
+  var elGreeting = document.getElementById('greeting');
+  var elStatus   = document.getElementById('status');
+  var btnIn      = document.getElementById('btnIn');
+  var btnOut     = document.getElementById('btnOut');
+
+  var idToken = null;
+  var busy = false;
+
+  function setStatus(text, kind) {
+    elStatus.textContent = text;
+    elStatus.className = 'show' + (kind ? ' ' + kind : '');
+  }
+
+  function clearStatus() {
+    elStatus.textContent = '';
+    elStatus.className = '';
+  }
+
+  function setBusy(state, label) {
+    busy = state;
+    btnIn.disabled = state;
+    btnOut.disabled = state;
+    if (state && label) {
+      btnIn.textContent = 'เข้างาน';
+      btnOut.textContent = 'เลิกงาน';
+      elGreeting.innerHTML = '';
+      var sp = document.createElement('span');
+      sp.className = 'spinner';
+      elGreeting.appendChild(sp);
+      elGreeting.appendChild(document.createTextNode(label));
+    }
+  }
+
+  function configMissing() {
+    return LIFF_ID.indexOf('PUT_') === 0 || GAS_URL.indexOf('PUT_') === 0;
+  }
+
+  // ── transport ──────────────────────────────────────────────────────────────
+  function tooLongOrFailed(err) {
+    return { ok: false, error: 'network', text: 'เชื่อมต่อเซิร์ฟเวอร์ไม่ได้: ' + (err && err.message || err) };
+  }
+
+  /**
+   * Primary: POST with Content-Type text/plain — a "simple request", so the browser sends
+   * no preflight, which is the request Apps Script cannot answer. If the response still
+   * cannot be read (CORS), fall through to JSONP, which is not subject to CORS at all.
+   */
+  function postJson(payload) {
+    var ctrl = ('AbortController' in window) ? new AbortController() : null;
+    var timer = setTimeout(function () { if (ctrl) ctrl.abort(); }, POST_TIMEOUT_MS);
+
+    return fetch(GAS_URL, {
+      method: 'POST',
+      headers: { 'Content-Type': 'text/plain;charset=utf-8' },
+      body: JSON.stringify(payload),
+      redirect: 'follow',
+      signal: ctrl ? ctrl.signal : undefined
+    }).then(function (res) {
+      if (!res.ok) throw new Error('HTTP ' + res.status);
+      return res.text();
+    }).then(function (body) {
+      var data = JSON.parse(body);
+      if (!data || typeof data !== 'object') throw new Error('unexpected body');
+      return data;
+    }).finally(function () {
+      clearTimeout(timer);
+    });
+  }
+
+  /** Fallback: JSONP through a <script> tag. Works in every webview, ignores CORS. */
+  function jsonp(payload) {
+    return new Promise(function (resolve, reject) {
+      var name = 'hrpunch_' + Math.floor(Math.random() * 1e9);
+      var script = document.createElement('script');
+      var done = false;
+      var timer = setTimeout(function () { finish(new Error('timeout')); }, POST_TIMEOUT_MS);
+
+      function finish(err, data) {
+        if (done) return;
+        done = true;
+        clearTimeout(timer);
+        try { delete window[name]; } catch (e) { window[name] = undefined; }
+        if (script.parentNode) script.parentNode.removeChild(script);
+        if (err) reject(err); else resolve(data);
+      }
+
+      window[name] = function (data) { finish(null, data); };
+      script.onerror = function () { finish(new Error('script load failed')); };
+      script.src = GAS_URL +
+        (GAS_URL.indexOf('?') === -1 ? '?' : '&') +
+        'cb=' + encodeURIComponent(name) +
+        '&p=' + encodeURIComponent(JSON.stringify(payload));
+      document.head.appendChild(script);
+    });
+  }
+
+  function send(payload) {
+    return postJson(payload).catch(function (err) {
+      console.warn('POST failed, trying JSONP:', err);
+      return jsonp(payload);
+    });
+  }
+
+  // ── location ───────────────────────────────────────────────────────────────
+  function currentPosition() {
+    return new Promise(function (resolve, reject) {
+      if (!navigator.geolocation) {
+        reject({ code: -1, message: 'no geolocation' });
+        return;
+      }
+      navigator.geolocation.getCurrentPosition(
+        function (pos) {
+          resolve({
+            lat: pos.coords.latitude,
+            lng: pos.coords.longitude,
+            acc: pos.coords.accuracy
+          });
+        },
+        function (err) { reject(err); },
+        GEO_OPTS
+      );
+    });
+  }
+
+  function geoErrorMessage(err) {
+    // 1 = permission denied, 2 = position unavailable, 3 = timeout.
+    if (err && err.code === 1) {
+      return 'ไม่ได้รับอนุญาตให้ใช้ตำแหน่ง\n\n' +
+             'เปิดการเข้าถึงตำแหน่งให้ LINE ก่อน:\n' +
+             'ตั้งค่า iPhone/Android → LINE → ตำแหน่ง → อนุญาต\n' +
+             'หรือลงเวลาด้วยปุ่ม “เข้างาน” ในเมนูแชท (ระบบจะบันทึกโดยไม่มีตำแหน่ง)';
+    }
+    if (err && err.code === 3) {
+      return 'หาตำแหน่งไม่ทันเวลา (อาจอยู่ในอาคาร)\nลองอีกครั้งใกล้หน้าต่าง หรือลงเวลาด้วยปุ่มในเมนูแชท';
+    }
+    if (err && err.code === 2) {
+      return 'เครื่องระบุตำแหน่งไม่ได้ตอนนี้\nลองอีกครั้ง หรือลงเวลาด้วยปุ่มในเมนูแชท';
+    }
+    return 'เบราว์เซอร์นี้ไม่รองรับการระบุตำแหน่ง';
+  }
+
+  // ── flow ───────────────────────────────────────────────────────────────────
+  function punch(action) {
+    if (busy || configMissing() || !idToken) return;
+    clearStatus();
+    setBusy(true, 'กำลังขอตำแหน่ง…');
+
+    currentPosition()
+      .catch(function (err) {
+        // A refused location must not block the punch: send it without coordinates and let
+        // the server record 'no_fix'. Attendance beats telemetry — the same rule the plain
+        // menu button follows.
+        setStatus(geoErrorMessage(err), 'warn');
+        return { lat: null, lng: null, acc: null };
+      })
+      .then(function (pos) {
+        setBusy(true, 'กำลังบันทึกเวลา…');
+        return send({
+          idToken: idToken,
+          action: action,
+          lat: pos.lat,
+          lng: pos.lng,
+          acc: pos.acc
+        });
+      })
+      .then(function (res) {
+        setBusy(false);
+        var text = (res && res.text) ? res.text : 'ไม่ได้รับคำตอบจากเซิร์ฟเวอร์';
+        var kind = 'ok';
+        if (res && (res.error || res.blocked)) kind = res.blocked ? 'warn' : 'error';
+        else if (text.indexOf('⚠️') !== -1) kind = 'warn';
+        setStatus(text, kind);
+        elGreeting.textContent = 'ท่านสามารถปิดหน้านี้ได้';
+      })
+      .catch(function (err) {
+        setBusy(false);
+        var r = tooLongOrFailed(err);
+        setStatus(r.text + '\n\nกรุณาลงเวลาด้วยปุ่มในเมนูแชทแทน', 'error');
+      });
+  }
+
+  btnIn.addEventListener('click', function () { punch('in'); });
+  btnOut.addEventListener('click', function () { punch('out'); });
+
+  // ── boot ───────────────────────────────────────────────────────────────────
+  function fatal(text) {
+    setBusy(false);
+    btnIn.disabled = true;
+    btnOut.disabled = true;
+    elGreeting.textContent = 'ลงเวลางาน';
+    setStatus(text, 'error');
+  }
+
+  function boot() {
+    if (configMissing()) {
+      fatal('หน้านี้ยังไม่ได้ตั้งค่า\nกรุณาใส่ LIFF_ID และ GAS_URL ในไฟล์ index.html');
+      return;
+    }
+    if (typeof liff === 'undefined') {
+      fatal('โหลด LINE LIFF SDK ไม่ได้ กรุณาเปิดหน้านี้จากแอป LINE');
+      return;
+    }
+
+    liff.init({ liffId: LIFF_ID })
+      .then(function () {
+        if (!liff.isLoggedIn()) {
+          liff.login();
+          return null;
+        }
+        idToken = liff.getIDToken();
+        if (!idToken) {
+          // The LIFF app must have the `openid` scope; without it there is no ID token and
+          // the server cannot verify who is punching.
+          fatal('ไม่ได้รับสิทธิ์ยืนยันตัวตน (ต้องเปิด scope openid ใน LINE Login channel)');
+          return null;
+        }
+        // Display only — liff.getProfile() is client-side and never used as proof.
+        elGreeting.textContent = 'เลือกการลงเวลา';
+        btnIn.disabled = false;
+        btnOut.disabled = false;
+      })
+      .catch(function (err) {
+        console.error(err);
+        fatal('เปิด LIFF ไม่สำเร็จ: ' + (err && (err.message || err.code) || err) +
+              '\nกรุณาเปิดหน้านี้จากปุ่มในเมนูแชท LINE');
+      });
+  }
+
+  boot();
+})();
+</script>
+</body>
+</html>

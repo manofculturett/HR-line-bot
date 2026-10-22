@@ -103,6 +103,36 @@ so deferring it to a trigger would risk the reply window for no gain. Triggers a
 work with nobody waiting (the 09:15 digest). If the inline reply fails, the code pushes
 instead and logs `push_used` — the employee is never left not knowing whether the punch landed.
 
+### The location check — LIFF (v1.1)
+
+A postback event carries no location, so a check-in that can say *where* has to run a page
+inside LINE. That is the only reason LIFF exists in this project:
+
+```
+rich menu "เข้างาน" (URL action)
+  → https://liff.line.me/<LIFF_ID>                    inside LINE
+  → docs/liff/index.html, served by GitHub Pages
+      liff.init()  →  liff.getIDToken()
+      tap          →  navigator.geolocation  (a user action, as LINE requires)
+  → POST /exec   { idToken, action, lat, lng, acc }
+      verify the token at api.line.me/oauth2/v2.1/verify  → userId
+      geoCheck_()  →  ok | far | weak_fix | no_fix
+      punchIn_() / punchOut_()   — the same code the menu buttons use
+  → text back into the page, plus a row in DATA!Q:V
+```
+
+Trust is split deliberately. **Who** is verified: the ID token is checked server-side, which
+is as strong as a signed webhook's `userId` and keeps the `?k=` secret out of public static
+hosting. **Where** is self-reported by the phone, so it is evidence, not proof — a
+mock-location app defeats it and a WebView cannot detect one. `GEO_MODE=OFF` (the default)
+records verdicts and never blocks; a plain menu tap still punches, marked `source=line` and
+therefore visibly unverified. The one presence signal a phone cannot fabricate is a LINE
+Beacon at the door (available in Thailand) — designed, not built.
+
+The page must stay on static hosting: Apps Script's HTML runs inside an iframe at
+`*.googleusercontent.com`, where `liff.init()` refuses the page. Setup lives in
+[apps-script/README.md](apps-script/README.md#liff-check-in).
+
 ### Registration — one-time invite code
 
 A LINE account proves nothing about who the person is. HR types the roster once and hands each
@@ -169,6 +199,8 @@ HR-line-bot/
 │   ├── line.gs            # reply / push / rich-menu calls to the LINE API
 │   ├── sheets.gs          # spreadsheet access, LockService, block-aware appends
 │   ├── attendance.gs      # punch logic, on-time / late classification
+│   ├── geo.gs             # distance maths + the location verdict (pure, no I/O)
+│   ├── liff.gs            # LIFF entry point, ID-token verify, geo rows
 │   ├── registration.gs    # one-time-link-code flow + abuse controls
 │   ├── triggers.gs        # dailyDigest (09:15, workday + on/off gated), installTriggers
 │   ├── messages.gs        # ALL Thai user-facing copy (fixed constants)
@@ -176,6 +208,8 @@ HR-line-bot/
 ├── sheet/                 # the HR console, documented as it lives in the spreadsheet
 │   ├── README.md          # the live sheet: id, tabs, columns, sharing, timezone
 │   └── dashboard.md       # the HR_MAIN formulas + conditional formatting + gotchas
+├── docs/liff/             # the LIFF check-in page — its URL is the LIFF Endpoint URL
+│   └── index.html
 ├── scripts/               # local tooling (run with uv, see below)
 │   ├── make_richmenu.py   # generate the LINE rich-menu PNGs
 │   ├── setup_dashboard.py # (re)apply the HR_MAIN formulas for N employees
@@ -196,6 +230,8 @@ each area lives in the sub-README next to the code.
 | `line.gs` | reply, push fallback, rich-menu calls |
 | `sheets.gs` | spreadsheet access, `LockService`, block-aware appends, roster lookup |
 | `attendance.gs` | punch logic, on-time/late classification, day summary |
+| `geo.gs` | haversine + the location verdict — pure functions, no sheet, no network |
+| `liff.gs` | LIFF entry point, ID-token verification, geo rows |
 | `registration.gs` | link-code state machine |
 | `triggers.gs` | `installTriggers()`, the 09:15 digest |
 | `messages.gs` | all Thai copy, as constants |
@@ -275,9 +311,9 @@ One spreadsheet — **`Customer`**, id `1Ek-vacbfgWq11I2WhLvz6yc5WAD7IFojXRnnGVd
 |---|---|---|
 | `HR_MAIN` | dashboard `A:F` (formulas) + CONFIG `T:U` | formulas only; HR edits CONFIG |
 | `EMPLOYEES_LOG` | roster `A:H` | HR, plus the script on registration |
-| `DATA` | punches `A:E`, log `H:L`, errors `N:P` | script only |
+| `DATA` | punches `A:E`, log `H:L`, errors `N:P`, location `Q:V` | script only |
 
-Because three blocks share `DATA`, appends are **block-aware** (`appendToBlock_`), never
+Because four blocks share `DATA`, appends are **block-aware** (`appendToBlock_`), never
 `Sheet.appendRow()` — that would append at the bottom of the whole sheet and scatter them. The
 punch ledger is **append-only** — a correction is a new row, never an edit, so any day can be
 reconstructed. Full column-by-column detail in [sheet/README.md](sheet/README.md).
@@ -306,6 +342,8 @@ Scanned, not read from fixed cells, so HR may add or reorder rows. Column `U` is
 |---|---|
 | Who can POST to `/exec` | secret query param `?k=` |
 | Who can punch | only a `source.userId` bound to an `EMPLOYEES_LOG` row |
+| Who can post a LIFF punch | a LINE ID token verified server-side against the LINE Login channel |
+| The LIFF page | public static file — it holds **no** secret; identity comes from the token |
 | Double punching | `webhookEventId` dedupe (10 min) + one open `in` per employee per day |
 | Concurrent writes | `LockService.getScriptLock()` around every read-modify-write |
 | Registration abuse | single-use codes, identical error for unknown/wrong, rate limit 5/hour |
@@ -334,6 +372,8 @@ call at all, so no personal data ever leaves Google.
 | LINE OA **Free** plan | ฿0 — replies and rich-menu taps are **free**; only *push* counts (TH free = 300 msgs/month) |
 | Apps Script | ฿0 (no hosting) |
 | Gmail digest | ฿0 |
+| LIFF app + LINE Login channel | ฿0 — no review, no MAU fee |
+| GitHub Pages (the LIFF page) | ฿0 |
 | **Total** | **฿0/month** |
 
 The design answers **every** employee action with a *reply* (free, unlimited) and only
@@ -393,5 +433,16 @@ and audited clean. No server to keep alive and nothing hosted — no downtime, �
 
 **Not built:** the forgot-to-check-out report, a quota guard, and a 09:00 load test.
 
-**Open decisions:** anti-cheat model (honour system vs PIN / office QR / WiFi / LIFF GPS), and
-whether this is the system of record for payroll or a convenience front-end.
+**Location check — built, not yet deployed (v1.1, `feat/liff-geo-punch`).** A LIFF page
+collects the phone's position at punch time, the server verifies the LINE ID token,
+classifies the fix against `OFFICE_LAT/LNG` + `GEO_RADIUS_M`, and writes a verdict row in
+`DATA!Q:V`. `GEO_MODE` defaults to `OFF` (record only) — a bad indoor fix must never
+block a punch. Remaining before use: paste the LIFF id and `/exec` URL into
+`docs/liff/index.html`, enable GitHub Pages (branch `main`, folder `/docs`), publish the
+LINE Login channel, point the rich-menu เข้างาน button at the LIFF URL, `clasp push` +
+`clasp deploy`, and add the five geo keys to `HR_MAIN!T:U`.
+
+**Open decisions:** whether to move `GEO_MODE` from `OFF` to `WARN` after two weeks of
+shadow data; whether to add a LINE Beacon at the door (the only presence signal a phone
+cannot fabricate, and available in Thailand); and whether this is the system of record
+for payroll or a convenience front-end.

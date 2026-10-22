@@ -9,13 +9,21 @@
  */
 
 /**
- * Handle `ck:in`.
+ * Handle `ck:in` / the LIFF check-in.
  *
+ * @param {Object} employee  the roster row
+ * @param {Object} cfg       the CONFIG block
+ * @param {Object=} geo      geoCheck_() result, or undefined for a plain menu tap.
+ *                           A geo punch is recorded with source 'liff-geo' and gets a
+ *                           matching row in DATA!Q:V; a plain tap stays 'line' and is
+ *                           unverified. Both are legal — a punch must never be lost
+ *                           because the phone refused to give a location.
  * @returns {string} the reply text.
  */
-function punchIn_(employee, cfg) {
+function punchIn_(employee, cfg, geo) {
   var empId = employee.values[COLS.EMPLOYEES.ID];
   var tz = cfg.TZ;
+  var g = geo || null;
 
   var punches = todaysPunches_(empId, tz);
   var openIn = findLast_(punches, 'in');
@@ -29,20 +37,28 @@ function punchIn_(employee, cfg) {
   var now = new Date();
   var lateMin = lateMinutes_(now, cfg);
 
+  // The note column carries both facts HR greps for: lateness and the geo verdict.
+  var notes = [];
+  if (lateMin > 0) notes.push('late ' + lateMin + 'm');
+  if (geoNote_(g)) notes.push(geoNote_(g));
+
   withLock_(function () {
-    appendToBlock_('ATTENDANCE', [now, empId, 'in', 'line', lateMin > 0 ? 'late ' + lateMin + 'm' : '']);
+    appendToBlock_('ATTENDANCE', [now, empId, 'in', g ? 'liff-geo' : 'line', notes.join(' ')]);
     logEvent_('', empId, 'ck:in', lateMin > 0 ? 'late' : 'ok');
+    appendGeoUnlocked_(now, empId, 'in', g);
   });
 
-  return lateMin > 0
+  var text = lateMin > 0
     ? fill_(MSG.IN_LATE, { time: hhmm_(now, tz), late: lateMin })
     : fill_(MSG.IN_OK,   { time: hhmm_(now, tz) });
+  return decorateGeo_(text, g);
 }
 
-/** Handle `ck:out`. Refuses when there is no open check-in. */
-function punchOut_(employee, cfg) {
+/** Handle `ck:out` / the LIFF check-out. Refuses when there is no open check-in. */
+function punchOut_(employee, cfg, geo) {
   var empId = employee.values[COLS.EMPLOYEES.ID];
   var tz = cfg.TZ;
+  var g = geo || null;
 
   var punches = todaysPunches_(empId, tz);
   var openIn = findLast_(punches, 'in');
@@ -59,15 +75,16 @@ function punchOut_(employee, cfg) {
   var worked = minutesBetween_(openIn.ts, now);
 
   withLock_(function () {
-    appendToBlock_('ATTENDANCE', [now, empId, 'out', 'line', '']);
+    appendToBlock_('ATTENDANCE', [now, empId, 'out', g ? 'liff-geo' : 'line', geoNote_(g)]);
     logEvent_('', empId, 'ck:out', 'ok');
+    appendGeoUnlocked_(now, empId, 'out', g);
   });
 
-  return fill_(MSG.OUT_OK, {
+  return decorateGeo_(fill_(MSG.OUT_OK, {
     time: hhmm_(now, tz),
     hours: Math.floor(worked / 60),
     mins: worked % 60
-  });
+  }), g);
 }
 
 /** Handle `me:today` — read-only. */

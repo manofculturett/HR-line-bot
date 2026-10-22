@@ -23,7 +23,13 @@ Read [`../README.md`](../README.md) first — especially **The two Apps Script s
    | `LINE_CHANNEL_ACCESS_TOKEN` | Messaging API channel access token (long-lived) |
    | `WEBHOOK_SECRET` | random string; also goes in the webhook URL as `?k=` |
    | `SHEET_ID` | `1Ek-vacbfgWq11I2WhLvz6yc5WAD7IFojXRnnGVd0i-4` (the `Customer` sheet) |
-   | `LINE_CHANNEL_ID` | channel id (for building URLs / debugging) |
+   | `LINE_CHANNEL_ID` | **Messaging API** channel id (for building URLs / debugging) |
+   | `LIFF_ID` | LIFF app id, `1234567890-AbCdEfgh` (LIFF tab of the LINE Login channel) |
+   | `LIFF_CHANNEL_ID` | **LINE Login** channel id — the `client_id` used to verify ID tokens |
+
+   ⚠️ `LINE_CHANNEL_ID` and `LIFF_CHANNEL_ID` are different channels and are not
+   interchangeable. A LIFF app cannot be added to a Messaging API channel any more, so the
+   Login channel is separate; the ID-token check fails with the wrong id.
 
 3. **Deploy as a web app**
    ```bash
@@ -42,6 +48,62 @@ Read [`../README.md`](../README.md) first — especially **The two Apps Script s
    script is broken. Use the manual check below instead.
 
 5. **Install triggers** — run `installTriggers()` once from the editor.
+
+6. **LIFF check-in (optional, v1.1)** — see the section below.
+
+## LIFF check-in
+
+The LIFF page is [`../docs/liff/index.html`](../docs/liff/index.html), served by GitHub
+Pages at the URL you register as the LIFF **Endpoint URL**. It runs inside LINE, reads the
+device location, and posts it here with an ID token.
+
+Why it is not hosted here: an Apps Script web app's HTML executes inside an iframe at
+`*.googleusercontent.com`, so `liff.init()` fails with *"called with a current URL that is
+not related to the endpoint URL"* and LINE's login screen refuses to be framed. Static
+hosting is required — do not move the page into HtmlService.
+
+### Console steps (once)
+
+1. LINE Developers Console → **same provider** as the OA → create a **LINE Login** channel
+   (app type *Web app*). A LIFF app cannot be added to a Messaging API channel.
+2. That channel → **LIFF** tab → Add:
+   - Endpoint URL: `https://<user>.github.io/HR-line-bot/liff/` (exact path, HTTPS)
+   - Size: Full · Scopes: `openid`, `profile`
+3. **Publish** the LINE Login channel. While it is *Developing* only admins and testers
+   can open the LIFF URL and everyone else gets a 404.
+4. Basic settings → **Linked OA** → link the LINE Official Account.
+5. Put `LIFF_ID` and `LIFF_CHANNEL_ID` in Script Properties (table above).
+6. Paste the same LIFF id and this project's `/exec` URL into the two constants at the top
+   of `docs/liff/index.html`, commit, and let Pages redeploy.
+7. Rich menu → the **เข้างาน** button becomes a **URL action** pointing at
+   `https://liff.line.me/<LIFF_ID>`. The postback action keeps working; a postback punch is
+   simply recorded without a location.
+
+### What the server does with a LIFF request
+
+`doPost` sees a body with `idToken` and takes route 1: verify the token at
+`api.line.me/oauth2/v2.1/verify`, map `sub` → `EMPLOYEES_LOG`, classify the position in
+`geo.gs`, then run the same `punchIn_` / `punchOut_` the buttons use — with a `geo`
+argument that adds `source=liff-geo`, a note like `geo:far 1200m`, and a row in `DATA!Q:V`.
+
+`GEO_MODE` in `HR_MAIN!T:U` decides what a failed check does: `OFF` (default) records only,
+`WARN` also tells the employee, `BLOCK` refuses the punch.
+
+### Verifying it without deploying
+
+```bash
+# wrong/absent token → unauthorized, and nothing is written
+curl -sL "https://script.google.com/macros/s/<ID>/exec" \
+  -H 'Content-Type: text/plain' -d '{"idToken":"x","action":"in"}'
+# → {"ok":false,"error":"unauthorized","text":"…"}
+
+# JSONP fallback (what the page uses when fetch is CORS-blocked)
+curl -sL "https://script.google.com/macros/s/<ID>/exec?cb=cb&p=%7B%22idToken%22%3A%22x%22%7D"
+# → cb({"ok":false,"error":"unauthorized",…})
+```
+
+A real end-to-end check needs a phone: open the LIFF URL from the rich menu inside LINE,
+tap เข้างาน, and confirm both the reply text and a new `DATA!Q:V` row.
 
 ## Manual verification (do not trust the Verify button)
 
@@ -64,11 +126,13 @@ so without `-L` curl shows the redirect, not the body.
 
 | File | Owns |
 |---|---|
-| `Code.gs` | `doPost` / `doGet`, secret check, dedupe, routing |
-| `config.gs` | Script Properties + `Config` tab parsing |
+| `Code.gs` | `doPost` / `doGet`, route selection, secret check, dedupe, JSONP |
+| `config.gs` | Script Properties, tab/column layout (`TABS`/`BLOCKS`/`COLS`), CONFIG parsing |
 | `line.gs` | LINE API calls: reply, push, rich menus |
 | `sheets.gs` | Spreadsheet access, `LockService`, append-only writes |
 | `attendance.gs` | Punch logic and late/on-time classification |
+| `geo.gs` | Distance maths and the location verdict (pure, no I/O) |
+| `liff.gs` | LIFF entry point, ID-token verification, geo rows |
 | `registration.gs` | Link-code registration state machine |
 | `triggers.gs` | Installable triggers: 09:15 digest (workday + on/off gated) |
 | `messages.gs` | All Thai user-facing copy (constants — never model-generated) |

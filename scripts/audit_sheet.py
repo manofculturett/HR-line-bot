@@ -17,6 +17,7 @@ BLOCKS = [
     ('ATTENDANCE', 'DATA',          0,  5),
     ('LOG',        'DATA',          7,  5),
     ('ERROR',      'DATA',          13, 3),
+    ('GEO',        'DATA',          16, 8),
     ('EMPLOYEES',  'EMPLOYEES_LOG', 0,  8),
 ]
 ERRORS = ('#REF!', '#VALUE!', '#N/A', '#ERROR!', '#DIV/0!', '#NAME?')
