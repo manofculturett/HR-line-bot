@@ -20,7 +20,7 @@ Put the id in the Apps Script Script Property `SHEET_ID` (see `../apps-script/RE
 
 | Tab | Holds | Who touches it |
 |---|---|---|
-| `HR_MAIN` | HR's dashboard (A:F) **and** the CONFIG block (T:U) | HR reads and edits; formulas only — the script writes nothing |
+| `HR_MAIN` | HR's dashboard (A:G) **and** the CONFIG block (T:U) | HR reads and edits; formulas only — the script writes nothing |
 | `EMPLOYEES_LOG` | the roster, A:H | HR edits — **contains credentials, HR-only** |
 | `DATA` | four append-only blocks: punches A:E, log H:L, errors O:Q, location checks S:Z | machine writes, HR reads |
 
@@ -53,9 +53,12 @@ match the three tabs already in the spreadsheet.
 15                                       GEO_RADIUS_M   150
 16                                       GEO_MAX_ACC_M  150
 17                                       GEO_MODE       OFF           ← OFF | WARN | BLOCK
+18                                       EARLY_GRACE_MIN 5            ← named range; flag if out earlier than WORK_END−5m
 ```
 
 - Dashboard rows 5–24 are **formulas only** — see [`dashboard.md`](dashboard.md).
+- Column **G (`ออกก่อน`)** flags an early check-out, e.g. `ก่อน 119 น.`. It never blocks
+  anything: leaving early is allowed and is only made visible to HR.
 - CONFIG is a plain key/value block. The script **scans** it, so HR can add or reorder
   rows freely. Named ranges `WORK_START` and `LATE_GRACE_MIN` point at `U6` and `U7`.
 - `U` is formatted as **plain text** — otherwise Sheets parses `09:00` into a time value

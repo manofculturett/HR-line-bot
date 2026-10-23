@@ -73,18 +73,29 @@ function punchOut_(employee, cfg, geo) {
 
   var now = new Date();
   var worked = minutesBetween_(openIn.ts, now);
+  var earlyMin = earlyMinutes_(now, cfg);
+
+  // Same shape as the 'in' note: say why the day is short. 'early 119m' is greppable and
+  // symmetric with 'late 180m'.
+  var notes = [];
+  if (earlyMin > 0) notes.push('early ' + earlyMin + 'm');
+  if (geoNote_(g)) notes.push(geoNote_(g));
 
   withLock_(function () {
-    appendToBlock_('ATTENDANCE', [now, empId, 'out', g ? 'liff-geo' : 'line', geoNote_(g)]);
-    logEvent_('', empId, 'ck:out', 'ok');
+    appendToBlock_('ATTENDANCE', [now, empId, 'out', g ? 'liff-geo' : 'line', notes.join(' ')]);
+    logEvent_('', empId, 'ck:out', earlyMin > 0 ? 'early' : 'ok');
     appendGeoUnlocked_(now, empId, 'out', g);
   });
 
-  return decorateGeo_(fill_(MSG.OUT_OK, {
+  var text = fill_(MSG.OUT_OK, {
     time: hhmm_(now, tz),
     hours: Math.floor(worked / 60),
     mins: worked % 60
-  }), g);
+  });
+  // Leaving early is allowed — nothing here refuses it. It is recorded, shown to HR, and
+  // told to the employee, so the flag can never be a surprise at review time.
+  if (earlyMin > 0) text += fill_(MSG.OUT_EARLY_SUFFIX, { early: earlyMin, end: cfg.WORK_END });
+  return decorateGeo_(text, g);
 }
 
 /** Handle `me:today` — read-only. */
@@ -135,6 +146,26 @@ function lateMinutes_(when, cfg) {
   var now = parseInt(hhmm[0], 10) * 60 + parseInt(hhmm[1], 10);
   var late = now - (start + lateGraceMin_(cfg));
   return late > 0 ? late : 0;
+}
+
+/**
+ * Minutes short of WORK_END, past EARLY_GRACE_MIN. 0 → not early (or no flag).
+ *
+ * Deliberately softer than lateMinutes_: a missing or unparseable WORK_END returns 0 and
+ * never throws. Lateness is a business rule and may fail loudly; "left early" is advisory,
+ * and it must never be able to block a check-out.
+ */
+function earlyMinutes_(when, cfg) {
+  var end = parseHhMm_(cfg.WORK_END);
+  if (end === null) return 0;
+  var hhmm = Utilities.formatDate(when, cfg.TZ, 'HH:mm').split(':');
+  var now = parseInt(hhmm[0], 10) * 60 + parseInt(hhmm[1], 10);
+
+  // The grace decides WHETHER to flag, never how many minutes to report: the number shown
+  // must be the real gap to WORK_END, so the ledger note, the employee's message and the
+  // HR_MAIN "ออกก่อน" column all say the same thing (18:00 − 16:01 = 119, not 114).
+  var early = end - now;
+  return early > earlyGraceMin_(cfg) ? early : 0;
 }
 
 function minutesBetween_(from, to) {

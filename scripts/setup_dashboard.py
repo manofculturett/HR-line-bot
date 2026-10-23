@@ -25,6 +25,13 @@ STATUS = ('=IF($A{r}="","",IF($D{r}="","ยังไม่เข้างาน"
 # B1 — who has not checked in today. Says so explicitly when nobody is missing: a blank
 # cell is indistinguishable from a broken formula, which is exactly the doubt this removes.
 # LET keeps the FILTER expression in one place instead of duplicating it inside an IF.
+# G — left early. Leaving early is ALLOWED (nothing refuses it); this only makes it visible.
+# The reported number is the raw gap to WORK_END, and EARLY_GRACE_MIN decides whether the
+# flag appears at all, so the dashboard, the ledger note and the employee's message agree.
+# Same shape as the punch reply: it never says "early" for a couple of minutes.
+EARLY = ('=IF($A{r}="","",IF($E{r}="","",'
+         'IF(ROUND((TIMEVALUE(WORK_END)-TIMEVALUE($E{r}))*1440)>EARLY_GRACE_MIN,'
+         '"ก่อน "&ROUND((TIMEVALUE(WORK_END)-TIMEVALUE($E{r}))*1440)&" น.","")))')
 MISSING = ('=LET(nm,EMPLOYEES_LOG!$B$2:$B,act,EMPLOYEES_LOG!$G$2:$G,'
            'id,EMPLOYEES_LOG!$A$2:$A,'
            'miss,IFERROR(FILTER(nm,(act=TRUE)*(COUNTIFS(DATA!$B:$B,id,DATA!$C:$C,"in",'
@@ -60,7 +67,10 @@ def main():
              'values': [['=ARRAYFORMULA(FILTER(EMPLOYEES_LOG!$C$2:$C,EMPLOYEES_LOG!$G$2:$G=TRUE))']]},
             {'range': 'HR_MAIN!D%d:F%d' % (FIRST, last),
              'values': [[CHECKIN.format(r=r), CHECKOUT.format(r=r), STATUS.format(r=r)]
-                        for r in range(FIRST, last + 1)]}]
+                        for r in range(FIRST, last + 1)]},
+            {'range': 'HR_MAIN!G4', 'values': [['ออกก่อน']]},
+            {'range': 'HR_MAIN!G%d:G%d' % (FIRST, last),
+             'values': [[EARLY.format(r=r)] for r in range(FIRST, last + 1)]}]
 
     print('would write rows %d..%d (%d employee rows)' % (FIRST, last, args.rows))
     if args.dry_run:
@@ -75,6 +85,29 @@ def main():
     print('wrote %d cells' % res.get('totalUpdatedCells'))
     for r in res.get('responses', []):
         print('  ', r['updatedRange'], r['updatedCells'])
+
+    # Named ranges the formulas depend on. HR is allowed to reorder the CONFIG block, so the
+    # formulas reference names rather than fixed cells. Idempotent: only missing ones are made.
+    meta = svc.spreadsheets().get(
+        spreadsheetId=FID, fields='namedRanges,sheets.properties(title,sheetId)').execute()
+    have = {n['name'] for n in meta.get('namedRanges', [])}
+    main_id = next(s['properties']['sheetId'] for s in meta['sheets']
+                   if s['properties']['title'] == 'HR_MAIN')
+    # 1-based CONFIG rows: U6 WORK_START, U7 LATE_GRACE_MIN, U8 WORK_END, U18 EARLY_GRACE_MIN
+    want = {'WORK_START': 6, 'LATE_GRACE_MIN': 7, 'WORK_END': 8, 'EARLY_GRACE_MIN': 18}
+    reqs, made = [], []
+    for name, row in want.items():
+        if name in have:
+            continue
+        reqs.append({'addNamedRange': {'namedRange': {'name': name, 'range': {
+            'sheetId': main_id, 'startRowIndex': row - 1, 'endRowIndex': row,
+            'startColumnIndex': 20, 'endColumnIndex': 21}}}})
+        made.append('%s→U%d' % (name, row))
+    if reqs:
+        svc.spreadsheets().batchUpdate(spreadsheetId=FID, body={'requests': reqs}).execute()
+        print('created named ranges:', ', '.join(made))
+    else:
+        print('named ranges already present')
 
 
 if __name__ == '__main__':

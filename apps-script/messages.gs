@@ -29,6 +29,7 @@ var MSG = {
   OUT_OK:          'เลิกงาน {time} ✅ รวม {hours} ชม. {mins} นาที',
   OUT_NOIN:        'ยังไม่พบการเข้างานของวันนี้ กรุณากด “เข้างาน” ก่อน',
   OUT_DUP:         'คุณเลิกงานแล้วเมื่อ {time}',
+  OUT_EARLY_SUFFIX: '\n⏱ ออกก่อนกำหนด {early} นาที (เลิกงาน {end} น.)',
 
   // --- location check (LIFF punches). Say "verified" only when geoCheck_ passed. ---
   GEO_OK_SUFFIX:      '\n📍 ยืนยันตำแหน่งแล้ว (ห่างออฟฟิศ {dist} ม.)',

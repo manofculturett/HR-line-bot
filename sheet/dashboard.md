@@ -1,6 +1,6 @@
 # `HR_MAIN` — HR's screen
 
-One row per active employee for **today**, live from `DATA`. Everything in A:F is a
+One row per active employee for **today**, live from `DATA`. Everything in A:G is a
 formula; nothing is typed by hand and **nothing is written by a script**. Google Sheets
 does not push to the screen, but the dashboard recalculates whenever a punch is appended
 (an API write propagates to open browsers) and on open — so no heartbeat trigger is needed.
@@ -81,15 +81,35 @@ ranges at `HR_MAIN!U6` and `U7`.
 The two guards matter: `$A5=""` keeps the empty rows below the roster blank, and `$D5=""`
 gives "not in yet" rather than a `#VALUE!` from `TIMEVALUE("")`.
 
+**G5, filled down to G204 — left early.** Leaving early is allowed; this only makes it
+visible. The number is the raw gap to `WORK_END`; `EARLY_GRACE_MIN` (named range) decides
+whether the flag appears at all, so a 4-minute finish does not raise one.
+
+```
+=IF($A5="","",IF($E5="","",
+  IF(ROUND((TIMEVALUE(WORK_END)-TIMEVALUE($E5))*1440)>EARLY_GRACE_MIN,
+     "ก่อน "&ROUND((TIMEVALUE(WORK_END)-TIMEVALUE($E5))*1440)&" น.","")))
+```
+
+The same minutes appear in the `DATA` note (`early 119m`) and in the employee's check-out
+message, because all three use the same rule: **grace is a threshold, never a discount** —
+reporting 114 instead of 119 would make the sheet disagree with the chat.
+
 ## Conditional formatting
 
-Applied to **F5:F24**:
+Applied to **F5:F24** (status):
 
 | Rule | Format |
 |---|---|
 | Text is exactly `ยังไม่เข้างาน` | red background |
 | Text contains `สาย` | amber background |
 | Text is exactly `ตรงเวลา` | green background |
+
+Applied to **G5:G204** (left early):
+
+| Rule | Format |
+|---|---|
+| Cell is not empty | amber background |
 
 ## Provisioning: how many employees?
 

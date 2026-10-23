@@ -72,6 +72,7 @@ var CONFIG_DEFAULTS = {
   WORK_START: '09:00',
   LATE_GRACE_MIN: '0',
   WORK_END: '18:00',
+  EARLY_GRACE_MIN: '5',        // leaving earlier than WORK_END minus this gets flagged
   WORK_DAYS: 'MON,TUE,WED,THU,FRI',
   HR_EMAIL: '',
   DIGEST_TIME: '09:15',
@@ -158,6 +159,12 @@ function isWorkday_(cfg) {
 /** Minutes past WORK_START that still counts as on time. */
 function lateGraceMin_(cfg) {
   var n = parseInt(cfg.LATE_GRACE_MIN, 10);
+  return isNaN(n) ? 0 : n;
+}
+
+/** Minutes before WORK_END that still counts as a full day. */
+function earlyGraceMin_(cfg) {
+  var n = parseInt(cfg.EARLY_GRACE_MIN, 10);
   return isNaN(n) ? 0 : n;
 }
 

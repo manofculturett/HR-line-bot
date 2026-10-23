@@ -147,7 +147,7 @@ stores their `line_user_id` and clears the code (single use). The reply is ident
 
 ### The HR console — Google Sheets
 
-`HR_MAIN` A:F is a live view of today: one row per active employee with in/out times and a
+`HR_MAIN` A:G is a live view of today: one row per active employee with in/out times, a
 `ตรงเวลา / สาย / ยังไม่เข้างาน` status, colour-coded. `B1` is the missing-staff list; `B2` is
 last activity. All formulas — no script writer and **no trigger**; the sheet recalculates on
 every punch write and on open. The 09:15 digest email goes to `HR_EMAIL`, gated by
@@ -314,7 +314,7 @@ One spreadsheet — **`Customer`**, id `1Ek-vacbfgWq11I2WhLvz6yc5WAD7IFojXRnnGVd
 
 | Tab | Blocks | Who writes |
 |---|---|---|
-| `HR_MAIN` | dashboard `A:F` (formulas) + CONFIG `T:U` | formulas only; HR edits CONFIG |
+| `HR_MAIN` | dashboard `A:G` (formulas) + CONFIG `T:U` | formulas only; HR edits CONFIG |
 | `EMPLOYEES_LOG` | roster `A:H` | HR, plus the script on registration |
 | `DATA` | punches `A:E`, log `H:L`, errors `O:Q`, location `S:Z` | script only |
 

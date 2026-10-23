@@ -47,7 +47,7 @@ def rows(tab, a1='A1:Z60'):
 print('\n' + '-' * 72)
 print('HR_MAIN — computed values (what HR actually sees)')
 print('-' * 72)
-for i, r in enumerate(rows('HR_MAIN', 'A1:F12'), 1):
+for i, r in enumerate(rows('HR_MAIN', 'A1:G12'), 1):
     print('%3d | %s' % (i, ' | '.join('' if c is None else str(c) for c in r)))
 
 print('\nHR_MAIN config block T:U')
@@ -108,7 +108,7 @@ for key, tab, col, width in BLOCKS:
 print('\n' + '-' * 72)
 print('Plan conformance')
 print('-' * 72)
-hr = rows('HR_MAIN', 'A1:F40')
+hr = rows('HR_MAIN', 'A1:G40')
 emp = rows('EMPLOYEES_LOG', 'A1:H60')
 active = sum(1 for r in emp[1:] if len(r) > 6 and str(r[6]).strip().upper() == 'TRUE')
 dash_rows = sum(1 for r in hr[4:] if len(r) > 0 and str(r[0]).strip())
