@@ -22,15 +22,25 @@ CHECKOUT = ('=IFERROR(TEXT(MAX(FILTER(DATA!$A:$A,(DATA!$B:$B=$A{r})*(DATA!$C:$C=
             '*(INT(DATA!$A:$A)=TODAY()))),"HH:mm"),"")')
 STATUS = ('=IF($A{r}="","",IF($D{r}="","ยังไม่เข้างาน",IF(TIMEVALUE($D{r})>'
           'TIMEVALUE(WORK_START)+LATE_GRACE_MIN/1440,"สาย","ตรงเวลา")))')
-MISSING = ('=ARRAYFORMULA(TEXTJOIN(", ",TRUE,IF((EMPLOYEES_LOG!$G$2:$G=TRUE)*'
-           '(COUNTIFS(DATA!$B:$B,EMPLOYEES_LOG!$A$2:$A,DATA!$C:$C,"in",'
-           'INT(DATA!$A:$A),TODAY())=0),EMPLOYEES_LOG!$B$2:$B,"")))')
+# B1 — who has not checked in today. Says so explicitly when nobody is missing: a blank
+# cell is indistinguishable from a broken formula, which is exactly the doubt this removes.
+# LET keeps the FILTER expression in one place instead of duplicating it inside an IF.
+MISSING = ('=LET(nm,EMPLOYEES_LOG!$B$2:$B,act,EMPLOYEES_LOG!$G$2:$G,'
+           'id,EMPLOYEES_LOG!$A$2:$A,'
+           'miss,IFERROR(FILTER(nm,(act=TRUE)*(COUNTIFS(DATA!$B:$B,id,DATA!$C:$C,"in",'
+           'INT(DATA!$A:$A),TODAY())=0)),""),'
+           'IF(miss="","เข้างานครบทุกคน ✅",TEXTJOIN(", ",TRUE,miss)))')
 # B2 — last activity: the newest punch time today. A FORMULA, not a script write, so the
 # dashboard needs no per-minute heartbeat trigger; it recalculates whenever a punch is
 # appended (and on open).
+#
+# The upper bound is NOW(), not TODAY()+1. With the old bound, any future-dated row —
+# a phone with a wrong clock, or a sample row written as =TODAY()+TIME(17,32,0) — made
+# "last update" show a time that had not happened yet. NOW() makes a future row simply
+# not count until the clock catches up, so the cell can never claim a time ahead of now.
 LAST_ACTIVITY = ('=IFERROR(IF(MAXIFS(DATA!$A:$A,DATA!$A:$A,">="&TODAY(),DATA!$A:$A,'
-                '"<"&TODAY()+1)=0,"",TEXT(MAXIFS(DATA!$A:$A,DATA!$A:$A,">="&TODAY(),'
-                'DATA!$A:$A,"<"&TODAY()+1),"HH:mm:ss")),"")')
+                '"<="&NOW())=0,"",TEXT(MAXIFS(DATA!$A:$A,DATA!$A:$A,">="&TODAY(),'
+                'DATA!$A:$A,"<="&NOW()),"HH:mm:ss")),"")')
 
 
 def main():

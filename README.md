@@ -426,15 +426,15 @@ and audited clean. No server to keep alive and nothing hosted — no downtime, �
   `WORK_START` / `LATE_GRACE_MIN` present.
 - CONFIG as listed above; **`EMAIL_ENABLED=FALSE`** (digest currently off).
 
-**Two things left before real use:**
+**Sample data removed 2026-10-23.** The two demo punches were `=TODAY()+TIME(8,57,0)` and
+`=TODAY()+TIME(17,32,0)` — formulas that re-dated themselves to *today* every night. That made
+a non-existent employee show `ตรงเวลา` daily, put a name in the missing list, and made
+"อัปเดตล่าสุด" read `17:32:00` at 15:55. Both sample punches and the two unlinked sample roster
+rows are now gone; the surviving roster row is the linked test account, re-noted as such.
 
-1. **Sample rows are still in the sheet.** `EMPLOYEES_LOG` and `DATA` still hold test entries
-   (marked `ตัวอย่าง` / `SAMPLE`), so the dashboard shows fake attendance. Delete **only** rows
-   with an empty `line_user_id` — a roster row that is `linked` is a real binding; keep it and
-   its punches.
-2. **The digest is switched off** (`EMAIL_ENABLED=FALSE`). Set it `TRUE` when HR wants the 09:15
-   email, and confirm the `dailyDigest` trigger is installed by running `installTriggers()` once
-   from the editor.
+**One thing left before real use:** the digest is switched off (`EMAIL_ENABLED=FALSE`). Set it
+`TRUE` when HR wants the 09:15 email, and confirm the `dailyDigest` trigger is installed by
+running `installTriggers()` once from the editor.
 
 **Not built:** the forgot-to-check-out report, a quota guard, and a 09:00 load test.
 

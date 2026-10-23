@@ -146,6 +146,10 @@ for tab, grid in raw.items():
         # log/error blocks too, and joining a whole row mixes three unrelated tables.
         width = 8 if tab == 'EMPLOYEES_LOG' else 5
         joined = ' '.join(str(c) for c in r[:width])
+        # A roster row with a line_user_id is a REAL binding (see sheet/README.md) — never
+        # report it as a deletable sample, whatever its note says.
+        if tab == 'EMPLOYEES_LOG' and len(r) > 4 and str(r[4]).strip():
+            continue
         if 'SAMPLE' in joined or 'ตัวอย่าง' in joined:
             print('  %s row %d: %s' % (tab, i, joined.strip()[:100])); samples += 1
 print('  none' if not samples else '  %d sample row(s) still live — they make the dashboard show fake attendance' % samples)
