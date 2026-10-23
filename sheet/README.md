@@ -48,7 +48,7 @@ match the three tabs already in the spreadsheet.
 10                                       HR_EMAIL       (your address)
 11                                       DIGEST_TIME    09:15
 12                                       EMAIL_ENABLED  TRUE          ← FALSE stops the digest
-13                                       OFFICE_LAT     13.7563       ← v1.1 location check
+13                                       OFFICE_LAT     13.7563       ← location check (v2)
 14                                       OFFICE_LNG     100.5018
 15                                       GEO_RADIUS_M   150
 16                                       GEO_MAX_ACC_M  150
@@ -65,7 +65,7 @@ match the three tabs already in the spreadsheet.
   and the script sees a date instead of `"09:00"`.
 - The scan is **last-row-wins** for a duplicated key. If a value looks ignored, look for a
   second row with the same key further down.
-- The geo keys (13–17) are new in v1.1 and may be absent — missing keys fall back to the
+- The geo keys (13–17) arrived in v2 and may be absent — missing keys fall back to the
   defaults in `config.gs`, where `GEO_MODE` is `OFF` (shadow mode).
 
 ## `EMPLOYEES_LOG` (A:H)

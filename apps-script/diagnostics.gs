@@ -2,13 +2,16 @@
  * diagnostics.gs — one-click "is it actually working?" check.
  *
  * Run `selfTest` from the Apps Script editor (function dropdown → Run) and read the
- * Executions log. It answers, in order, the five things that silently break this bot:
+ * Executions log. It answers, in order, the seven things that silently break this bot:
  *
  *   1. Script Properties present    → a missing one throws on the first real message
  *   2. Spreadsheet reachable        → SHEET_ID correct and shared with this account
- *   3. CONFIG readable              → WORK_START parses (a Time cell would break it)
+ *   3. CONFIG readable              → WORK_START / WORK_END parse ("09:00", not a Date)
  *   4. LINE channel reachable       → the access token is valid
  *   5. Rich menus configured        → the ids match real menus on the channel
+ *   6. Data state                   → who is linked, how many punches exist
+ *   7. LIFF punch path              → LIFF_ID / LIFF_CHANNEL_ID set and distinct, and the
+ *                                     geo block headers are where config.gs says they are
  *
  * Everything here is read-only. It never writes a punch.
  */
@@ -28,7 +31,8 @@ function selfTest() {
   var props = PropertiesService.getScriptProperties().getProperties();
   [['SHEET_ID', true], ['WEBHOOK_SECRET', true],
    ['LINE_CHANNEL_ACCESS_TOKEN', true], ['LINE_CHANNEL_ID', false],
-   ['RICHMENU_REGISTERED', false], ['RICHMENU_UNREGISTERED', false]].forEach(function (p) {
+   ['RICHMENU_REGISTERED', false], ['RICHMENU_UNREGISTERED', false],
+   ['LIFF_ID', false], ['LIFF_CHANNEL_ID', false]].forEach(function (p) {
     var v = props[p[0]];
     if (v) ok(p[0], p[0].indexOf('TOKEN') >= 0 || p[0].indexOf('SECRET') >= 0 ? '(set)' : v);
     else if (p[1]) bad(p[0], 'MISSING — required');
@@ -55,9 +59,16 @@ function selfTest() {
     if (parseHhMm_(c.WORK_START) === null) {
       throw new Error('WORK_START does not parse as HH:MM (got "' + c.WORK_START + '")');
     }
-    return 'start=' + c.WORK_START + ' grace=' + c.LATE_GRACE_MIN +
+    // WORK_END feeds the HR_MAIN "ออกก่อน" column; a Time-formatted cell would silently
+    // break that formula the same way it breaks WORK_START.
+    if (parseHhMm_(c.WORK_END) === null) {
+      throw new Error('WORK_END does not parse as HH:MM (got "' + c.WORK_END + '")');
+    }
+    return 'start=' + c.WORK_START + ' end=' + c.WORK_END +
+           ' grace=' + c.LATE_GRACE_MIN + '/' + c.EARLY_GRACE_MIN +
            ' tz=' + c.TZ + ' hrEmail=' + (c.HR_EMAIL || '(unset)') +
            ' email=' + (cfgBool_(c.EMAIL_ENABLED) ? 'ON' : 'OFF') +
+           ' geoMode=' + c.GEO_MODE +
            ' todayWorkday=' + (isWorkday_(c) ? 'yes' : 'no');
   });
 
@@ -103,6 +114,46 @@ function selfTest() {
     }).length;
     return 'employees=' + emp.length + ' active=' + active + ' linked=' + linked +
            ' | punches=' + readBlock_('ATTENDANCE').length;
+  });
+
+  // 7. LIFF punch path
+  console.log('\n[7] LIFF punch path');
+  check('LIFF Script Properties', function () {
+    var liffId = props.LIFF_ID;
+    var lane = props.LIFF_CHANNEL_ID;
+    if (!liffId || !lane) {
+      throw new Error('LIFF_ID and LIFF_CHANNEL_ID must both be set, or every LIFF punch ' +
+                      'answers "unauthorized" (got LIFF_ID=' + (liffId || 'UNSET') +
+                      ' LIFF_CHANNEL_ID=' + (lane || 'UNSET') + ')');
+    }
+    // The classic mistake: pasting the Messaging API channel id here. The ID token is
+    // issued by the LINE Login channel, so verifying against the OA channel id always fails.
+    if (String(lane) === String(props.LINE_CHANNEL_ID || '-')) {
+      throw new Error('LIFF_CHANNEL_ID equals LINE_CHANNEL_ID — it must be the LINE LOGIN channel id');
+    }
+    return 'liffId=' + liffId;
+  });
+  check('geo block headers', function () {
+    var want = ['ts', 'employee_id', 'event', 'lat', 'lng', 'acc_m', 'dist_m', 'verdict'];
+    var got = getTab_(TABS.DATA)
+      .getRange(1, BLOCKS.GEO.col + 1, 1, BLOCKS.GEO.width)
+      .getValues()[0]
+      .map(function (v) { return String(v).trim(); });
+    if (got.join('|') !== want.join('|')) {
+      throw new Error('DATA geo block reads [' + got.join(',') + '] at column ' +
+                      BLOCKS.GEO.col + ', expected [' + want.join(',') + ']');
+    }
+    return 'aligned at column ' + BLOCKS.GEO.col + ' (' + BLOCKS.GEO.width + ' wide)';
+  });
+  check('location verdicts recorded', function () {
+    var rows = readBlock_('GEO');
+    if (!rows.length) return 'none yet — no LIFF punch has run';
+    var by = {};
+    rows.forEach(function (r) {
+      var v = String(r.values[COLS.GEO.VERDICT]).trim() || '?';
+      by[v] = (by[v] || 0) + 1;
+    });
+    return rows.length + ' check(s): ' + JSON.stringify(by);
   });
 
   console.log('\n=== ' + pass + ' passed, ' + fail + ' failed ===');

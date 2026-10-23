@@ -136,12 +136,6 @@ function setLinkStatus_(sheetRow, status) {
 
 /* ---- Attendance (DATA!A:E) ---- */
 
-function appendPunch_(employeeId, event, note) {
-  withLock_(function () {
-    appendToBlock_('ATTENDANCE', [new Date(), employeeId, event, 'line', note || '']);
-  });
-}
-
 /** Today's punches for one employee, oldest first. */
 function todaysPunches_(employeeId, tz) {
   var today = Utilities.formatDate(new Date(), tz, 'yyyy-MM-dd');

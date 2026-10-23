@@ -60,17 +60,6 @@ function answer_(userId, replyToken, text) {
   }
 }
 
-/** Display name for a user id. Returns null rather than throwing. */
-function getProfileDisplayName_(userId) {
-  var res = UrlFetchApp.fetch(LINE_API + '/profile/' + encodeURIComponent(userId), {
-    headers: authHeaders_(),
-    muteHttpExceptions: true,
-    timeout: LINE_TIMEOUT_MS
-  });
-  if (res.getResponseCode() !== 200) return null;
-  return JSON.parse(res.getContentText()).displayName || null;
-}
-
 /* ---- rich menus ----
  *
  * The two menus are built in LINE's own OA Manager (visual designer, handles Thai text
@@ -103,19 +92,6 @@ function attachMenu_(userId, menuKey) {
     return true;
   } catch (err) {
     console.warn('attachMenu_ failed: ' + err);
-    return false;
-  }
-}
-
-/** Remove the per-user menu (they fall back to the OA's default). */
-function detachMenu_(userId) {
-  try {
-    UrlFetchApp.fetch(
-      LINE_API + '/user/' + encodeURIComponent(userId) + '/richmenu',
-      { method: 'delete', headers: authHeaders_(), muteHttpExceptions: true, timeout: LINE_TIMEOUT_MS });
-    return true;
-  } catch (err) {
-    console.warn('detachMenu_ failed: ' + err);
     return false;
   }
 }

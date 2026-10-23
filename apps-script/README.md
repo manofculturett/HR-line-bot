@@ -49,7 +49,7 @@ Read [`../README.md`](../README.md) first — especially **The two Apps Script s
 
 5. **Install triggers** — run `installTriggers()` once from the editor.
 
-6. **LIFF check-in (optional, v1.1)** — see the section below.
+6. **LIFF check-in** — see the section below. Optional: the menu buttons work without it.
 
 ## LIFF check-in
 

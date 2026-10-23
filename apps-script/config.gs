@@ -125,13 +125,6 @@ function dateToHhMm_(d) {
   return Utilities.formatDate(d, Session.getScriptTimeZone(), 'HH:mm');
 }
 
-/** A config value that must look like HH:MM, whatever the cell type turned out to be. */
-function cfgTime_(v, fallback) {
-  if (v instanceof Date) return dateToHhMm_(v);
-  var s = String(v == null ? '' : v).trim();
-  return s || fallback;
-}
-
 /** Truthy config value: TRUE / YES / 1 / Y / ON (case-insensitive). Anything else is off. */
 function cfgBool_(v) {
   var s = String(v == null ? '' : v).trim().toLowerCase();

@@ -103,7 +103,7 @@ so deferring it to a trigger would risk the reply window for no gain. Triggers a
 work with nobody waiting (the 09:15 digest). If the inline reply fails, the code pushes
 instead and logs `push_used` — the employee is never left not knowing whether the punch landed.
 
-### The location check — LIFF (v1.1)
+### The location check — LIFF
 
 A postback event carries no location, so a check-in that can say *where* has to run a page
 inside LINE. That is the only reason LIFF exists in this project:
@@ -194,6 +194,7 @@ per-project secret store; **clasp** = the CLI that syncs local files to the proj
 ```
 HR-line-bot/
 ├── README.md              ← you are here (everything)
+├── CHANGELOG.md           # what changed in each tagged version (and what is deployed)
 ├── apps-script/           # the entire backend (a clasp project)
 │   ├── README.md          # setup, deploy, webhook binding, manual verification
 │   ├── appsscript.json    # manifest: Asia/Bangkok, ANYONE_ANONYMOUS, OAuth scopes
@@ -289,7 +290,7 @@ The LINE console's "Verify" only checks for a 2xx — it passes even when the sc
 Use the real checks:
 
 1. **`selfTest()`** — editor → function dropdown → `selfTest` → Run; read the Executions log.
-   It checks the five things that silently break this bot (properties, sheet, config, LINE
+   It checks the seven things that silently break this bot (properties, sheet, config, LINE
    channel, rich menus). Read-only.
 2. **Health check** — `curl -sL "https://script.google.com/macros/s/<ID>/exec?k=$WEBHOOK_SECRET"`
    returns `{"ok":true,"role":"hr-line-bot",...}`; a wrong `k` returns
@@ -413,48 +414,37 @@ would cost money is pushing, so the design avoids it.
 
 ## Status
 
-**Live, stable, and free.** The Apps Script Web App is deployed (2 deployments; the LINE
-webhook is bound to the live version) and the health endpoint answers correctly. Registration
-and the punch flow run end-to-end against the live `Customer` sheet; the HR dashboard is live
-and audited clean. No server to keep alive and nothing hosted — no downtime, ฿0/month.
+**v2.0.0 — live, in production use, and ฿0/month.** The Apps Script Web App is deployed (the
+LINE webhook is bound to the live deployment) and the health endpoint answers. Registration,
+the punch flow and the LIFF location check all run end-to-end against the live `Customer`
+sheet; the HR dashboard is audited clean. No server to keep alive, nothing hosted except one
+static page — no downtime, no bill.
 
-**Verified 2026-10-18** against the live deployment and sheet:
+**Verified 2026-10-23** against the live deployment and sheet:
 
-- `clasp deployments` → 2 deployments; health check (`/exec?k=wrong`) → correct
-  `{"ok":false,"error":"unauthorized"}` body.
-- Dashboard audited clean: no formula errors, 200 employee rows provisioned, named ranges
-  `WORK_START` / `LATE_GRACE_MIN` present.
-- CONFIG as listed above; **`EMAIL_ENABLED=FALSE`** (digest currently off).
+- Two deployments; the webhook points at the live one. A wrong `?k=` returns
+  `{"ok":false,"error":"unauthorized"}`; the health check (with the real secret) reports
+  `version: "v2"`.
+- The LIFF path ran end-to-end from a phone: check-in `12:05` and check-out `16:01`, both
+  `source=liff-geo`, `verdict=ok`, 16 m from the office, with `early 119m` on the out row.
+- Dashboard clean: no formula errors, 200 employee rows provisioned, named ranges
+  `WORK_START` / `LATE_GRACE_MIN` / `WORK_END` / `EARLY_GRACE_MIN`; `B1` reads
+  `เข้างานครบทุกคน ✅` when nobody is missing, `B2` ignores future-dated rows.
+- No sample data left. `audit_sheet.py` → "none".
+- CONFIG as listed above; **`EMAIL_ENABLED=FALSE`** (digest off).
 
-**Sample data removed 2026-10-23.** The two demo punches were `=TODAY()+TIME(8,57,0)` and
-`=TODAY()+TIME(17,32,0)` — formulas that re-dated themselves to *today* every night. That made
-a non-existent employee show `ตรงเวลา` daily, put a name in the missing list, and made
-"อัปเดตล่าสุด" read `17:32:00` at 15:55. Both sample punches and the two unlinked sample roster
-rows are now gone; the surviving roster row is the linked test account, re-noted as such.
+**One thing left before real use:** the digest is switched off. Set `EMAIL_ENABLED=TRUE` when
+HR wants the 09:15 email, and run `installTriggers()` once from the editor so the
+`dailyDigest` trigger exists.
 
-**One thing left before real use:** the digest is switched off (`EMAIL_ENABLED=FALSE`). Set it
-`TRUE` when HR wants the 09:15 email, and confirm the `dailyDigest` trigger is installed by
-running `installTriggers()` once from the editor.
+**Shipped in v2:** LIFF check-in/out with the location verdict (`DATA!S:Z`), the read-only
+"สถานะวันนี้" panel on the page, the `ออกก่อน` column, the `early Nm` ledger note, hardened
+`B1`/`B2`, block columns aligned with the live sheet, dead code removed, and `selfTest`
+extended to cover the LIFF path.
 
-**Not built:** the forgot-to-check-out report, a quota guard, and a 09:00 load test.
-
-**Location check — built, page deployed, code not (v1.1).** A LIFF page collects the
-phone's position at punch time, the server verifies the LINE ID token, classifies the fix
-against `OFFICE_LAT/LNG` + `GEO_RADIUS_M`, and writes a verdict row in `DATA!S:Z`.
-`GEO_MODE` is `OFF` (record only) — a bad indoor fix must never block a punch.
-
-- Repo published: `github.com/manofculturett/HR-line-bot` (public); `main` carries v1.1
-  and `v1.0.0` is tagged.
-- GitHub Pages is on (`main` / `/docs`), build clean, and
-  `https://manofculturett.github.io/HR-line-bot/liff/` returns 200 and renders — verified
-  in a browser. It currently refuses to run because its two constants are placeholders.
-- The five geo keys are written to `HR_MAIN!T13:U17`; `OFFICE_LAT` / `OFFICE_LNG` are
-  blank on purpose (blank ⇒ verdict `no_office`, never a false `far`).
-
-Remaining before real use: paste the LIFF id and `/exec` URL into `docs/liff/index.html`;
-publish the LINE Login channel; `clasp push` + `clasp deploy -i <same deployment>`;
-point the rich-menu เข้างาน button at `https://liff.line.me/<LIFF_ID>`; then punch once
-from a phone and check `DATA!S:Z`.
+**Not built:** the forgot-to-check-out report, a quota guard, the 09:00 load test, and a PDPA
+retention job for `DATA!S:Z` (the sheet keeps coordinates forever until something deletes
+them — 90 days is the suggested rule).
 
 **Open decisions:** whether to move `GEO_MODE` from `OFF` to `WARN` after two weeks of
 shadow data; whether to add a LINE Beacon at the door (the only presence signal a phone

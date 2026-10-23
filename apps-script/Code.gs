@@ -86,7 +86,7 @@ function doGet(e) {
   return textOut_(JSON.stringify({
     ok: true,
     role: 'hr-line-bot',
-    version: 'v1',
+    version: 'v2',
     timezone: Session.getScriptTimeZone()
   }));
 }
