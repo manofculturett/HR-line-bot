@@ -90,8 +90,13 @@ hosting is required — do not move the page into HtmlService.
    on the dashboard come from the `out` row, so verifying only the morning verifies only
    half the day.
 
-   A postback punch keeps working and is recorded without a location (`source=line`), so
-   an employee whose phone refuses to give a position still punches — just unverified.
+   **The chat path is closed.** `PUNCH_REQUIRE_GEO=TRUE` (default) makes a postback or a
+   typed word answer with a link to the LIFF page instead of recording a punch — otherwise the
+   location check is advisory and anyone can type "เข้างาน" from anywhere. It closes the
+   *channel*, not the fix: a phone that refuses to give a position still punches **from the
+   page** and is recorded as `no_fix`. Set the key to `FALSE` in the CONFIG block to reopen the
+   chat path without a redeploy; those punches then record `source=line` and are visibly
+   unverified in `DATA!D`.
 
 ### What the server does with a LIFF request
 

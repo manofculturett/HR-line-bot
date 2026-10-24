@@ -82,6 +82,14 @@ Two explicit buttons (in / out) rather than one toggle — a wrong-direction pun
 notice and painful to clean up. No AI in the punch path: "tap → write a row" is
 deterministic, and a check-in that waits on a model call hangs an employee at the door.
 
+> **v2: the menu's two punch buttons are URL actions into the LIFF page, and the postback and
+> typed-word paths are refused.** `PUNCH_REQUIRE_GEO=TRUE` (the default) answers a chat punch
+> with a link to the page instead of recording one. Without that guard the location check is
+> only advisory — anyone can type "เข้างาน" and punch from anywhere. The aliases above still
+> exist, so the refusal is a sentence the employee can act on rather than silence. Set
+> `PUNCH_REQUIRE_GEO=FALSE` to reopen the chat path (a phone swap, a broken camera); the
+> punches then record `source=line` and are visibly unverified.
+
 ### What happens on a tap
 
 ```
@@ -331,11 +339,17 @@ reconstructed. Full column-by-column detail in [sheet/README.md](sheet/README.md
 | `TZ` | `Asia/Bangkok` |
 | `WORK_START` | `09:00` |
 | `LATE_GRACE_MIN` | `5` |
-| `WORK_END` | `18:00` |
+| `WORK_END` | `18:00` — the `ออกก่อน` column measures against this |
+| `EARLY_GRACE_MIN` | `5` — leaving within this many minutes of `WORK_END` is not flagged |
 | `WORK_DAYS` | `MON,TUE,WED,THU,FRI` — the digest sends **only** on these days |
 | `HR_EMAIL` | where the 09:15 digest goes |
 | `DIGEST_TIME` | `09:15` |
 | `EMAIL_ENABLED` | `TRUE`/`FALSE` — turns the digest on/off |
+| `OFFICE_LAT` / `OFFICE_LNG` | the office point the distance is measured from |
+| `GEO_RADIUS_M` | `150` — metres from that point that still count as on-site |
+| `GEO_MAX_ACC_M` | `150` — a fix worse than this is `weak_fix`, never `far` |
+| `GEO_MODE` | `OFF` / `WARN` / `BLOCK` — what a failed check does. Start `OFF` |
+| `PUNCH_REQUIRE_GEO` | `TRUE` — only the LIFF page may punch; the chat path is refused |
 
 Scanned, not read from fixed cells, so HR may add or reorder rows. Column `U` is plain text
 (otherwise Sheets parses `09:00` into a time and `getValues()` returns a `Date`).
@@ -349,6 +363,7 @@ Scanned, not read from fixed cells, so HR may add or reorder rows. Column `U` is
 | Who can POST to `/exec` | secret query param `?k=` |
 | Who can punch | only a `source.userId` bound to an `EMPLOYEES_LOG` row |
 | Who can post a LIFF punch | a LINE ID token verified server-side against the LINE Login channel |
+| Punches from the chat | refused while `PUNCH_REQUIRE_GEO=TRUE`; only the LIFF page punches |
 | The LIFF page | public static file — it holds **no** secret; identity comes from the token |
 | Double punching | `webhookEventId` dedupe (10 min) + one open `in` per employee per day |
 | Concurrent writes | `LockService.getScriptLock()` around every read-modify-write |

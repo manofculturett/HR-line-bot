@@ -85,7 +85,16 @@ var CONFIG_DEFAULTS = {
   OFFICE_LNG: '',
   GEO_RADIUS_M: '150',
   GEO_MAX_ACC_M: '150',
-  GEO_MODE: 'OFF'
+  GEO_MODE: 'OFF',
+
+  // TRUE = a check-in/out must come from the LIFF page. Typing "เข้างาน" or tapping a
+  // postback is refused with a link to the page. Without this the location check is only
+  // advisory: anyone can type the word and punch with no location at all.
+  //
+  // It closes the *channel*, not the fix: a phone that refuses to give a position still
+  // punches from the page and is recorded as 'no_fix'. Set FALSE to reopen the text path
+  // (e.g. while a phone is being replaced).
+  PUNCH_REQUIRE_GEO: 'TRUE'
 };
 
 /** A required secret, or a loud failure at startup rather than a silent 401 later. */
@@ -159,6 +168,11 @@ function lateGraceMin_(cfg) {
 function earlyGraceMin_(cfg) {
   var n = parseInt(cfg.EARLY_GRACE_MIN, 10);
   return isNaN(n) ? 0 : n;
+}
+
+/** TRUE when a check-in/out must come from the LIFF page (no text or postback punches). */
+function requiresLiffPunch_(cfg) {
+  return cfgBool_(cfg.PUNCH_REQUIRE_GEO);
 }
 
 /**

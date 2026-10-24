@@ -31,6 +31,12 @@ var MSG = {
   OUT_DUP:         'คุณเลิกงานแล้วเมื่อ {time}',
   OUT_EARLY_SUFFIX: '\n⏱ ออกก่อนกำหนด {early} นาที (เลิกงาน {end} น.)',
 
+  // Sent when a punch arrives from the chat (typed word / postback) while PUNCH_REQUIRE_GEO
+  // is on. LINE turns the bare URL into a tappable link.
+  PUNCH_NEEDS_LIFF:
+    'การลงเวลาต้องยืนยันตำแหน่ง 📍\n' +
+    'กรุณาเปิดหน้านี้แล้วกดปุ่มลงเวลา:\n{url}',
+
   // --- location check (LIFF punches). Say "verified" only when geoCheck_ passed. ---
   GEO_OK_SUFFIX:      '\n📍 ยืนยันตำแหน่งแล้ว (ห่างออฟฟิศ {dist} ม.)',
   GEO_FAR_SUFFIX:     '\n⚠️ ตำแหน่งอยู่นอกพื้นที่ออฟฟิศ ({dist} ม.) ระบบบันทึกเวลาแล้ว',

@@ -252,6 +252,20 @@ function runAction_(userId, action, replyToken) {
 
   if (!usableEmployee_(employee)) return reply_(replyToken, MSG.REG_NOT_LINKED);
 
+  // A punch from the chat — a typed word or a postback button — carries no location, so it
+  // is refused when HR requires the LIFF page. Without this guard the whole location check is
+  // advisory: anyone can type "เข้างาน" and punch from anywhere.
+  if (requiresLiffPunch_(cfg)) {
+    var liffUrl = liffPunchUrl_();
+    if (liffUrl) {
+      logEvent_('', employee.values[COLS.EMPLOYEES.ID], 'refused:' + action, 'needs_liff');
+      return reply_(replyToken, fill_(MSG.PUNCH_NEEDS_LIFF, { url: liffUrl }));
+    }
+    // PUNCH_REQUIRE_GEO is on but LIFF_ID is unset: a configuration mistake must never lock
+    // the team out of the clock. Fail open, and say so in the error block.
+    logError_('runAction_', 'PUNCH_REQUIRE_GEO=TRUE but LIFF_ID is not set — allowing the chat punch');
+  }
+
   // Write then confirm; answer_ falls back to a push so a punch is never silent.
   var text = (action === 'in') ? punchIn_(employee, cfg) : punchOut_(employee, cfg);
   return answer_(userId, replyToken, text);

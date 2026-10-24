@@ -54,6 +54,7 @@ match the three tabs already in the spreadsheet.
 16                                       GEO_MAX_ACC_M  150
 17                                       GEO_MODE       OFF           ← OFF | WARN | BLOCK
 18                                       EARLY_GRACE_MIN 5            ← named range; flag if out earlier than WORK_END−5m
+19                                       PUNCH_REQUIRE_GEO TRUE       ← FALSE reopens typed/postback punches
 ```
 
 - Dashboard rows 5–24 are **formulas only** — see [`dashboard.md`](dashboard.md).

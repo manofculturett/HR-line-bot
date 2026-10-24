@@ -79,6 +79,18 @@ function handleLiffPunch_(payload) {
 }
 
 /**
+ * The LIFF URL to send an employee to when a punch must be verified.
+ *
+ * Built from the LIFF_ID Script Property so the id lives in one place (the page has its own
+ * copy, which is public and harmless). Returns null when the property is missing — callers
+ * must treat that as a configuration error, never as a reason to refuse a punch.
+ */
+function liffPunchUrl_() {
+  var id = PropertiesService.getScriptProperties().getProperty('LIFF_ID');
+  return id ? 'https://liff.line.me/' + id : null;
+}
+
+/**
  * Verify a LIFF ID token against LINE and return the user id, or null.
  *
  * A missing LIFF_CHANNEL_ID is a configuration error, not an auth failure — it is logged

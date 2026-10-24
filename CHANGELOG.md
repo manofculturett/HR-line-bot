@@ -4,6 +4,26 @@ Version markers follow the tags on `main`. The system is live, so "deployed" is 
 separately from "committed" — a tag whose code was never pushed with `clasp deploy` is not
 running.
 
+## v2.0.1 — 2026-10-23
+
+Closes a hole: the location check could be bypassed by typing.
+
+### Fixed
+
+- **A check-in/out typed into the chat (`เข้างาน`, `เลิกงาน`) — or sent as a postback — recorded
+  a punch with no location at all.** v2 left the chat path open as a fallback, which made the
+  entire location check advisory: anyone could type the word from anywhere. `PUNCH_REQUIRE_GEO`
+  (new CONFIG key, default `TRUE`) now refuses a chat punch and replies with the LIFF link. The
+  aliases still resolve, so the employee gets a sentence they can act on rather than
+  "not understood".
+- It closes the **channel**, not the fix: a phone that refuses to give a position still punches
+  **from the page** and is recorded as `no_fix`. Attendance is never blocked by a bad GPS fix —
+  only by punching from the wrong place.
+- If `LIFF_ID` is missing while the requirement is on, the punch is **allowed** and the
+  misconfiguration is written to the error block. A config mistake must never lock the team out
+  of the clock.
+- `สถานะของฉัน` is unaffected: read-only, still answers in the chat.
+
 ## v2.0.0 — 2026-10-23
 
 Location check, early-leave visibility, and the dashboard made truthful. Deployed.
