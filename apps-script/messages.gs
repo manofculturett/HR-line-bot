@@ -31,6 +31,10 @@ var MSG = {
   OUT_DUP:         'คุณเลิกงานแล้วเมื่อ {time}',
   OUT_EARLY_SUFFIX: '\n⏱ ออกก่อนกำหนด {early} นาที (เลิกงาน {end} น.)',
 
+  // Appended to a check-in when an earlier day was never closed. Told to the employee on
+  // purpose: HR sees it in HR_MAIN!B3, so it must not be a surprise.
+  STALE_OUT_SUFFIX: '\n⚠️ ยังไม่ได้ลงเวลาเลิกงานของวันที่ {date}\nHR จะเห็นรายการนี้',
+
   // Sent when a punch arrives from the chat (typed word / postback) while PUNCH_REQUIRE_GEO
   // is on. LINE turns the bare URL into a tappable link.
   PUNCH_NEEDS_LIFF:

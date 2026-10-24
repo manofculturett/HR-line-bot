@@ -33,6 +33,7 @@ match the three tabs already in the spreadsheet.
         A              B          C        D         E          F
 1   ยังไม่เข้างาน:   <formula>                                      ← the "is everyone in?" list
 2   อัปเดตล่าสุด     <formula>                                     ← latest punch time today
+3   ค้างเลิกงาน     <formula>                                     ← forgot to check out, earlier day
 3
 4   id            พนักงาน     แผนก     เข้างาน   เลิกงาน   สถานะ     ← header (frozen)
 5   A0123         สมชาย       ขาย      08:57     17:32     ตรงเวลา
@@ -60,6 +61,8 @@ match the three tabs already in the spreadsheet.
 - Dashboard rows 5–24 are **formulas only** — see [`dashboard.md`](dashboard.md).
 - Column **G (`ออกก่อน`)** flags an early check-out, e.g. `ก่อน 119 น.`. It never blocks
   anything: leaving early is allowed and is only made visible to HR.
+- **`B3` lists anyone who never checked out on an earlier day.** It counts punches *before*
+  today, so an open shift in progress does not appear there.
 - CONFIG is a plain key/value block. The script **scans** it, so HR can add or reorder
   rows freely. Named ranges `WORK_START` and `LATE_GRACE_MIN` point at `U6` and `U7`.
 - `U` is formatted as **plain text** — otherwise Sheets parses `09:00` into a time value

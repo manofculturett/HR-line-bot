@@ -4,6 +4,37 @@ Version markers follow the tags on `main`. The system is live, so "deployed" is 
 separately from "committed" — a tag whose code was never pushed with `clasp deploy` is not
 running.
 
+## v2.1.0 — 2026-10-24
+
+Attendance policy: one pair per day, and a forgotten day stops being invisible.
+
+### Changed
+
+- **One check-in per day, one check-out per day.** `punchIn_` refuses a second check-in
+  whether or not the employee already checked out, so an in→out→in cycle can no longer exist.
+  The dashboard reads the *first* in and the *last* out, so a second pair silently moved the
+  recorded shift — and the old guard only refused a second check-in while the first was still
+  open. `punchOut_` refuses a second check-out the same way.
+- Early check-out is unchanged: still allowed, still flagged (`ออกก่อน`, `early Nm`).
+
+### Added
+
+- **`HR_MAIN!B3 "ค้างเลิกงาน"`** lists anyone whose shift is still open from an earlier day.
+  The check is *the last punch before today was an `in`*, not a count of ins vs outs — a count
+  also flags an old day with two pairs, which is honest but never actionable on a today-board.
+- On check-in, a dangling earlier day is now reported to the employee
+  (`⚠️ ยังไม่ได้ลงเวลาเลิกงานของวันที่ …`), recorded in the punch note as
+  `forgot_out YYYY-MM-DD`, and logged as `forgot_out`. Silence was the bug: the old day stayed
+  open forever with no hours and no trace of why.
+- The phone cannot retro-close an earlier day (a check-out with nothing to close today is
+  refused). That stays an HR decision, not a guess by the bot.
+
+### Notes
+
+- A mid-day break is not modelled: one pair per day means one pair. If HR ever wants a
+  lunch out/in, that is a policy change, not a bug fix.
+- B3 is bounded to rows 2:204 like the rest of the dashboard.
+
 ## v2.0.1 — 2026-10-23
 
 Closes a hole: the location check could be bypassed by typing.

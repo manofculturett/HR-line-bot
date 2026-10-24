@@ -156,6 +156,8 @@ stores their `line_user_id` and clears the code (single use). The reply is ident
 ### The HR console — Google Sheets
 
 `HR_MAIN` A:G is a live view of today: one row per active employee with in/out times, a
+left-early flag, plus three summary cells — who has not checked in (`B1`), the latest
+punch (`B2`), and who never checked out on an earlier day (`B3`). Originally: a
 `ตรงเวลา / สาย / ยังไม่เข้างาน` status, colour-coded. `B1` is the missing-staff list; `B2` is
 last activity. All formulas — no script writer and **no trigger**; the sheet recalculates on
 every punch write and on open. The 09:15 digest email goes to `HR_EMAIL`, gated by

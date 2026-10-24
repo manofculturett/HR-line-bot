@@ -26,31 +26,38 @@ function punchIn_(employee, cfg, geo) {
   var g = geo || null;
 
   var punches = todaysPunches_(empId, tz);
-  var openIn = findLast_(punches, 'in');
-  var lastOut = findLast_(punches, 'out');
 
-  // Already checked in and not yet checked out → duplicate tap.
-  if (openIn && (!lastOut || lastOut.ts < openIn.ts)) {
-    return fill_(MSG.IN_DUP, { time: hhmm_(openIn.ts, tz) });
-  }
+  // ONE check-in per day — not "one *open* check-in". Allowing in → out → in lets someone
+  // leave and re-appear later the same day, and the dashboard reads the FIRST in and the
+  // LAST out, so a second pair silently extends the recorded shift.
+  var anyIn = findLast_(punches, 'in');
+  if (anyIn) return fill_(MSG.IN_DUP, { time: hhmm_(anyIn.ts, tz) });
 
   var now = new Date();
   var lateMin = lateMinutes_(now, cfg);
 
-  // The note column carries both facts HR greps for: lateness and the geo verdict.
+  // A forgotten check-out on an earlier day must not be silent. The day is already
+  // unclosed; tell the employee now so they can raise it, and mark it so HR sees it
+  // (HR_MAIN!B3 lists anyone with an unclosed day before today).
+  var stale = staleOpenIn_(empId, tz);
+
+  // The note column carries everything HR greps for: lateness, the geo verdict, and a
+  // dangling day.
   var notes = [];
   if (lateMin > 0) notes.push('late ' + lateMin + 'm');
   if (geoNote_(g)) notes.push(geoNote_(g));
+  if (stale) notes.push('forgot_out ' + Utilities.formatDate(stale.ts, tz, 'yyyy-MM-dd'));
 
   withLock_(function () {
     appendToBlock_('ATTENDANCE', [now, empId, 'in', g ? 'liff-geo' : 'line', notes.join(' ')]);
-    logEvent_('', empId, 'ck:in', lateMin > 0 ? 'late' : 'ok');
+    logEvent_('', empId, 'ck:in', (lateMin > 0 ? 'late' : 'ok') + (stale ? ' forgot_out' : ''));
     appendGeoUnlocked_(now, empId, 'in', g);
   });
 
   var text = lateMin > 0
     ? fill_(MSG.IN_LATE, { time: hhmm_(now, tz), late: lateMin })
     : fill_(MSG.IN_OK,   { time: hhmm_(now, tz) });
+  if (stale) text += fill_(MSG.STALE_OUT_SUFFIX, { date: Utilities.formatDate(stale.ts, tz, 'dd/MM') });
   return decorateGeo_(text, g);
 }
 
@@ -62,14 +69,14 @@ function punchOut_(employee, cfg, geo) {
 
   var punches = todaysPunches_(empId, tz);
   var openIn = findLast_(punches, 'in');
-  var lastOut = findLast_(punches, 'out');
+  var anyOut = findLast_(punches, 'out');
 
   if (!openIn) return MSG.OUT_NOIN;
 
-  // Already closed out for that check-in.
-  if (lastOut && lastOut.ts > openIn.ts) {
-    return fill_(MSG.OUT_DUP, { time: hhmm_(lastOut.ts, tz) });
-  }
+  // ONE check-out per day. If an `out` already exists today the pair is complete — even
+  // when a stray `in` sits after it (one-in-per-day no longer permits that, but historical
+  // rows exist and refusing keeps the day's record as the honest first-in/last-out).
+  if (anyOut) return fill_(MSG.OUT_DUP, { time: hhmm_(anyOut.ts, tz) });
 
   var now = new Date();
   var worked = minutesBetween_(openIn.ts, now);
@@ -134,6 +141,41 @@ function findLast_(punches, event) {
     if (punches[i].event === event) return punches[i];
   }
   return null;
+}
+
+/**
+ * The most recent check-in from BEFORE today that was never closed, or null.
+ *
+ * This is the case the same-day checks cannot see: `todaysPunches_` only looks at today, so
+ * a forgotten check-out would otherwise vanish — the employee checks in again next morning
+ * and the old day stays open forever, with no hours and no record of why.
+ *
+ * ⚠️ Scans the whole punch block (as `todaysPunches_` already does), so a check-in costs two
+ * block reads. Fine at a few thousand rows; past that, cache the open state per employee.
+ */
+function staleOpenIn_(empId, tz) {
+  var today = Utilities.formatDate(new Date(), tz, 'yyyy-MM-dd');
+  var rows = readBlock_('ATTENDANCE');
+  var seq = [];
+  for (var i = 0; i < rows.length; i++) {
+    var v = rows[i].values;
+    if (String(v[COLS.ATTENDANCE.EMPLOYEE_ID]).trim() !== String(empId).trim()) continue;
+    var ts = v[COLS.ATTENDANCE.TS];
+    if (!(ts instanceof Date)) continue;
+    // 'yyyy-MM-dd' compares correctly as a plain string — cheaper than date maths.
+    if (Utilities.formatDate(ts, tz, 'yyyy-MM-dd') >= today) continue;
+    seq.push({ ts: ts, event: String(v[COLS.ATTENDANCE.EVENT]).trim() });
+  }
+  seq.sort(function (a, b) { return a.ts - b.ts; });
+
+  // Walk it: an `in` opens a day, an `out` closes it. Whatever is still open at the end is
+  // the dangling day (the most recent one, if there are several).
+  var open = null;
+  for (var j = 0; j < seq.length; j++) {
+    if (seq[j].event === 'in') open = seq[j];
+    else if (seq[j].event === 'out') open = null;
+  }
+  return open;
 }
 
 /** Minutes late relative to WORK_START + LATE_GRACE_MIN. Negative → early. */

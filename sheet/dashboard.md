@@ -95,6 +95,38 @@ The same minutes appear in the `DATA` note (`early 119m`) and in the employee's 
 message, because all three use the same rule: **grace is a threshold, never a discount** —
 reporting 114 instead of 119 would make the sheet disagree with the chat.
 
+**B3 — who forgot to check out (an earlier day)**
+
+```
+=IFERROR(LET(act,EMPLOYEES_LOG!$G$2:$G$204,
+  nm,FILTER(EMPLOYEES_LOG!$B$2:$B$204,act=TRUE),
+  id,FILTER(EMPLOYEES_LOG!$A$2:$A$204,act=TRUE),
+  ev,MAP(id,LAMBDA(x,IFERROR(INDEX(FILTER(DATA!$C:$C,(DATA!$B:$B=x)*
+       (DATA!$A:$A=MAXIFS(DATA!$A:$A,DATA!$B:$B,x,DATA!$A:$A,"<"&TODAY()))),1),"") )),
+  hits,(ev="in")*1,
+  IF(SUM(hits)=0,"ไม่มีรายการค้าง ✅",TEXTJOIN(", ",TRUE,FILTER(nm,hits)))),"สูตรผิดพลาด — ตรวจ B3")
+```
+
+The question this answers is "is anyone's shift **still open from a previous day**", so the
+test is *the last punch before today was an `in`* — not "more ins than outs". Counting also
+flags a historical day that had two pairs: true, but never actionable on a today-board, and a
+cell that nags about old data teaches HR to ignore it.
+
+Today's open shift is excluded by design (`"<"&TODAY()`), or everyone still at work would be
+listed.
+
+Two things worth knowing:
+
+- **`MAP` is required.** An array expression assigned inside `LET` does not spill by itself:
+  the value collapses to one element, every comparison is silently false, and the cell reports
+  "nothing outstanding" while someone is stuck open. `MAP(id, LAMBDA(...))` forces it.
+- **The range is bounded to rows 2:204**, the same 203 roster rows the dashboard provisions.
+  Grow both together.
+
+Verified 2026-10-24 against the live sheet: with the boundary at `TODAY()` the expression
+returns `out` (nothing outstanding — correct), and with the boundary at 2026-10-23 it returns
+`in` (it sees the check-in left open on 22/10).
+
 ## Conditional formatting
 
 Applied to **F5:F24** (status):

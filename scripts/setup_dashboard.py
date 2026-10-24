@@ -32,6 +32,26 @@ STATUS = ('=IF($A{r}="","",IF($D{r}="","ยังไม่เข้างาน"
 EARLY = ('=IF($A{r}="","",IF($E{r}="","",'
          'IF(ROUND((TIMEVALUE(WORK_END)-TIMEVALUE($E{r}))*1440)>EARLY_GRACE_MIN,'
          '"ก่อน "&ROUND((TIMEVALUE(WORK_END)-TIMEVALUE($E{r}))*1440)&" น.","")))')
+# B3 — people whose shift is STILL OPEN from an earlier day (they forgot to check out).
+#
+# The test is "the last punch before today was an `in`", not "ins > outs". A count also
+# flags a historical day that had two pairs, which is honest but never actionable on a
+# today-board — and a cell that nags about old data is how a dashboard loses its audience.
+#
+# ⚠️ MAP is required. A COUNTIFS/MAP expression assigned inside LET does not spill on its
+#    own; without MAP the value collapses to a single one and every comparison is silently
+#    false, so the cell says "nothing outstanding" while someone is stuck open.
+# Bounded to rows 2:204 — the same 203 roster rows the dashboard provisions.
+STALE = ('=IFERROR(LET('
+         'act,EMPLOYEES_LOG!$G$2:$G$204,'
+         'nm,FILTER(EMPLOYEES_LOG!$B$2:$B$204,act=TRUE),'
+         'id,FILTER(EMPLOYEES_LOG!$A$2:$A$204,act=TRUE),'
+         'ev,MAP(id,LAMBDA(x,IFERROR(INDEX(FILTER(DATA!$C:$C,(DATA!$B:$B=x)*'
+         '(DATA!$A:$A=MAXIFS(DATA!$A:$A,DATA!$B:$B,x,DATA!$A:$A,"<"&TODAY()))),1),""))),'
+         'hits,(ev="in")*1,'
+         'IF(SUM(hits)=0,"ไม่มีรายการค้าง ✅",TEXTJOIN(", ",TRUE,FILTER(nm,hits)))),'
+         '"สูตรผิดพลาด — ตรวจ B3")')
+
 MISSING = ('=LET(nm,EMPLOYEES_LOG!$B$2:$B,act,EMPLOYEES_LOG!$G$2:$G,'
            'id,EMPLOYEES_LOG!$A$2:$A,'
            'miss,IFERROR(FILTER(nm,(act=TRUE)*(COUNTIFS(DATA!$B:$B,id,DATA!$C:$C,"in",'
@@ -59,6 +79,8 @@ def main():
     last = FIRST + args.rows - 1
     body = [{'range': 'HR_MAIN!B1', 'values': [[MISSING]]},
             {'range': 'HR_MAIN!B2', 'values': [[LAST_ACTIVITY]]},
+            {'range': 'HR_MAIN!A3', 'values': [['ค้างเลิกงาน']]},
+            {'range': 'HR_MAIN!B3', 'values': [[STALE]]},
             {'range': 'HR_MAIN!A5',
              'values': [['=ARRAYFORMULA(FILTER(EMPLOYEES_LOG!$A$2:$A,EMPLOYEES_LOG!$G$2:$G=TRUE))']]},
             {'range': 'HR_MAIN!B5',
