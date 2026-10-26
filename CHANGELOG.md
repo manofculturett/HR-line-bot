@@ -4,6 +4,60 @@ Version markers follow the tags on `main`. The system is live, so "deployed" is 
 separately from "committed" — a tag whose code was never pushed with `clasp deploy` is not
 running.
 
+## v2.2.0 — 2026-10-27
+
+The forgotten check-out gets a decision path. Nothing guesses a time.
+
+**Deployed:** version 17 → deployment `AKfycbzfyow…` (id unchanged, so the LIFF page's `/exec`
+URL still resolves). `installTriggers()` still has to be run once in the editor before the 05:00
+trigger exists; `EMAIL_ENABLED` decides whether either email actually sends.
+
+### Added
+
+- **`fixes.gs`** — closes a day the bot never closed, by appending one `out` row dated to
+  **that day**. Two entry points, both recording who claimed the time:
+  `hrFixDay(employeeId, 'yyyy-MM-dd', 'HH:mm')` run from the editor (`source=hr_fix`), and
+  `selfReportFix_` from the LIFF page (`source=self_report`).
+- **`forgotOutReport()` at 05:00** — an exception-only email to `HR_EMAIL` listing every day
+  still open before today (name, date, check-in time) plus every self-reported time from the
+  last 24 h, so HR accepts or queries it. Gated by `EMAIL_ENABLED` **and** `HR_EMAIL`, like the
+  digest. One `report:forgot_out` row per run in the LOG block, so "ran and found nothing" is
+  distinguishable from "never ran".
+- **LIFF actions `open` / `fix`** — a *ลืมลงเวลาเลิกงาน?* card that appears only when a day is
+  open, with a date picker and a time field. No location is requested: it is a claim about a
+  past day, not a punch, and no geo row is written.
+- **`SELF_REPORT_DAYS`** (`7`) config key — how far back the employee path reaches. `0` = off,
+  HR only. Added live at `HR_MAIN!T20:U20`.
+- `selfTest` section **[8]**: who is stuck open, whether the fix paths are reachable, and
+  whether the 05:00 trigger is actually installed.
+- `doGet` health check now reports `version: "v2.2.0"` instead of a bare `v2`, so a stale
+  deployment is visible.
+
+### Changed
+
+- **`openDaysByEmployee_`** is now the single definition of "dangling day" (all employees, all
+  unclosed days); `staleOpenIn_`, the 05:00 report and both fix paths read it. The check-in
+  warning is unchanged.
+
+### Deliberately not done
+
+- **No automatic check-out.** Any timestamp a job could write is invented, and it would be
+  invisible or actively wrong: stamped today it reads as today's `out` to `E5`/`G5` (a 05:00
+  check-out and a 13-hour early-leave flag for someone not yet arrived) and B3 stops naming
+  anyone while the day stays broken; backdated it clears every signal *and* fakes the hours.
+  Detection is a fact → `LOG` block. A punch row means a person was there → never written from
+  a detection.
+- A fix for **today** is refused by design: today is closed by pressing เลิกงาน.
+
+### Notes
+
+- Concept and review by Tartan; an overnight shift (in 22:00, out 02:00) still needs a manual
+  row — the one-pair-per-day rule keys on the calendar date.
+- The CONFIG block `T4:U20` is now full; a ninth key needs `CONFIG_RANGE` widened first.
+- Verified with a Node harness that runs these `.gs` files against a stubbed Apps Script
+  runtime seeded from the live sheet (25 assertions: guards, idempotency, email gating, the
+  LIFF route, and no regressions on the punch paths).
+
 ## v2.1.0 — 2026-10-24
 
 Attendance policy: one pair per day, and a forgotten day stops being invisible.

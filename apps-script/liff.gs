@@ -22,7 +22,9 @@
 /**
  * Entry point for both transports (POST body, and the JSONP fallback in Code.gs).
  *
- * @param {Object} payload { idToken, action, lat, lng, acc }
+ * @param {Object} payload { idToken, action, lat, lng, acc, date?, hhmm? }
+ *                   date/hhmm are only read by the 'fix' action (a self-reported
+ *                   check-out for a forgotten day); see fixes.gs.
  * @returns {Object} { ok, action, text, geo, error?, blocked? } — always JSON-safe, so
  *                   the page can render `text` directly and never shows a stack trace.
  */
@@ -41,8 +43,13 @@ function handleLiffPunch_(payload) {
     return { ok: false, error: 'not_linked', text: MSG.REG_NOT_LINKED };
   }
 
-  var action = actionOf_(payload.action);
-  if (action !== 'in' && action !== 'out' && action !== 'today') {
+  // 'open' and 'fix' are LIFF-only, and deliberately NOT in ACTION_ALIASES: that map is
+  // shared with the chat/postback path, where any recognised action falls through to a
+  // punch — so a typed "fix" would silently become a check-out.
+  var raw = normalizeToken_(payload.action);
+  var fixAction = (raw === 'open' || raw === 'fix') ? raw : null;
+  var action = actionOf_(raw);
+  if (!fixAction && action !== 'in' && action !== 'out' && action !== 'today') {
     return { ok: false, error: 'bad_action', text: MSG.NOT_UNDERSTOOD };
   }
 
@@ -54,6 +61,22 @@ function handleLiffPunch_(payload) {
   // identity for this request — a second route would need a second auth path.
   if (action === 'today') {
     return { ok: true, action: 'today', text: todayStatus_(employee, cfg) };
+  }
+
+  // Listing or closing a forgotten day is not a punch: no location is requested and no geo
+  // row is written, because nothing here claims the person is at the office NOW. The time
+  // is self-reported and recorded as source 'self_report' — see fixes.gs.
+  if (fixAction === 'open') {
+    var list = fixList_(employee, cfg);
+    return { ok: true, action: 'open', text: list.text, days: list.days };
+  }
+  if (fixAction === 'fix') {
+    var fix = selfReportFix_(employee, payload.date, payload.hhmm, cfg);
+    if (!fix.ok) {
+      logEvent_('', empId, 'fix', 'refused:' + fix.error);
+      return { ok: false, error: fix.error, text: fix.text };
+    }
+    return { ok: true, action: 'fix', text: fix.text };
   }
 
   var geo = geoCheck_(cfg, payload.lat, payload.lng, payload.acc);

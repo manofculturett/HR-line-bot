@@ -12,6 +12,8 @@
  *   6. Data state                   → who is linked, how many punches exist
  *   7. LIFF punch path              → LIFF_ID / LIFF_CHANNEL_ID set and distinct, and the
  *                                     geo block headers are where config.gs says they are
+ *   8. Forgotten check-outs         → who is stuck open, whether the 05:00 trigger exists,
+ *                                     and whether the report would actually send
  *
  * Everything here is read-only. It never writes a punch.
  */
@@ -154,6 +156,38 @@ function selfTest() {
       by[v] = (by[v] || 0) + 1;
     });
     return rows.length + ' check(s): ' + JSON.stringify(by);
+  });
+
+  // 8. Forgotten check-outs (v2.2.0)
+  console.log('\n[8] Forgotten check-outs');
+  check('open days', function () {
+    var c = getConfig_();
+    var open = openDaysByEmployee_(c.TZ);
+    var ids = Object.keys(open);
+    if (!ids.length) return 'none ✅';
+    return ids.map(function (id) {
+      return id + ' (' + open[id].map(function (p) {
+        return Utilities.formatDate(p.ts, c.TZ, 'dd/MM HH:mm');
+      }).join(', ') + ')';
+    }).join('; ');
+  });
+  check('fix paths configured', function () {
+    var c = getConfig_();
+    var days = selfReportDays_(c);
+    if (!days && !cfgBool_(c.EMAIL_ENABLED)) {
+      return 'self-report OFF, email OFF — a forgotten day is only visible in HR_MAIN!B3';
+    }
+    return 'selfReportDays=' + (days || 'OFF') +
+           ' email=' + (cfgBool_(c.EMAIL_ENABLED) ? 'ON → ' + (c.HR_EMAIL || 'HR_EMAIL UNSET') : 'OFF');
+  });
+  check('forgotOutReport trigger', function () {
+    var t = ScriptApp.getProjectTriggers().filter(function (x) {
+      return x.getHandlerFunction() === 'forgotOutReport';
+    });
+    // A report nobody scheduled is the failure this section exists to catch: the code is
+    // deployed, the sheet looks fine, and no email ever arrives.
+    if (!t.length) throw new Error('not installed — run installTriggers() once from the editor');
+    return t.length + ' trigger(s)';
   });
 
   console.log('\n=== ' + pass + ' passed, ' + fail + ' failed ===');

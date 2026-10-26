@@ -144,38 +144,66 @@ function findLast_(punches, event) {
 }
 
 /**
- * The most recent check-in from BEFORE today that was never closed, or null.
+ * Every check-in from BEFORE today that was never closed, keyed by employee id.
  *
  * This is the case the same-day checks cannot see: `todaysPunches_` only looks at today, so
  * a forgotten check-out would otherwise vanish — the employee checks in again next morning
  * and the old day stays open forever, with no hours and no record of why.
  *
- * ⚠️ Scans the whole punch block (as `todaysPunches_` already does), so a check-in costs two
- * block reads. Fine at a few thousand rows; past that, cache the open state per employee.
+ * ⚠️ This is the ONE definition of "dangling day" in the codebase. The check-in warning
+ * (`staleOpenIn_`), the 05:00 HR report and both fix paths all read it here, so they can
+ * never disagree about who is stuck open. Do not add a second scan somewhere else.
+ *
+ * ⚠️ One block read for the whole roster (as `todaysPunches_` already does), so a check-in
+ * costs two block reads. Fine at a few thousand rows; past that, cache the open state per
+ * employee rather than rescanning on every punch.
+ *
+ * @returns {Object} map of employee id -> array of unclosed `in` punches, oldest first.
  */
-function staleOpenIn_(empId, tz) {
+function openDaysByEmployee_(tz) {
   var today = Utilities.formatDate(new Date(), tz, 'yyyy-MM-dd');
   var rows = readBlock_('ATTENDANCE');
-  var seq = [];
+  var byEmp = {};
+
   for (var i = 0; i < rows.length; i++) {
     var v = rows[i].values;
-    if (String(v[COLS.ATTENDANCE.EMPLOYEE_ID]).trim() !== String(empId).trim()) continue;
     var ts = v[COLS.ATTENDANCE.TS];
     if (!(ts instanceof Date)) continue;
     // 'yyyy-MM-dd' compares correctly as a plain string — cheaper than date maths.
     if (Utilities.formatDate(ts, tz, 'yyyy-MM-dd') >= today) continue;
-    seq.push({ ts: ts, event: String(v[COLS.ATTENDANCE.EVENT]).trim() });
+    var id = String(v[COLS.ATTENDANCE.EMPLOYEE_ID]).trim();
+    if (!id) continue;
+    if (!byEmp[id]) byEmp[id] = [];
+    byEmp[id].push({ ts: ts, event: String(v[COLS.ATTENDANCE.EVENT]).trim() });
   }
-  seq.sort(function (a, b) { return a.ts - b.ts; });
 
-  // Walk it: an `in` opens a day, an `out` closes it. Whatever is still open at the end is
-  // the dangling day (the most recent one, if there are several).
-  var open = null;
-  for (var j = 0; j < seq.length; j++) {
-    if (seq[j].event === 'in') open = seq[j];
-    else if (seq[j].event === 'out') open = null;
+  var out = {};
+  for (var empId in byEmp) {
+    if (!byEmp.hasOwnProperty(empId)) continue;
+    var seq = byEmp[empId].sort(function (a, b) { return a.ts - b.ts; });
+
+    // Walk it: an `in` opens a day, a real `out` closes every open one before it. Whatever
+    // is still open at the end is dangling. (Counting ins vs outs instead would flag a
+    // legacy day that had two pairs — true, but not something anyone can act on today.)
+    var open = [];
+    for (var j = 0; j < seq.length; j++) {
+      if (seq[j].event === 'in') open.push(seq[j]);
+      else if (seq[j].event === 'out') open = [];
+    }
+    if (open.length) out[empId] = open;
   }
-  return open;
+  return out;
+}
+
+/**
+ * The most recent check-in from BEFORE today that was never closed, or null.
+ *
+ * The check-in warning only ever talks about one day: the newest dangling one. The 05:00
+ * report lists all of them.
+ */
+function staleOpenIn_(empId, tz) {
+  var open = openDaysByEmployee_(tz)[String(empId).trim()];
+  return (open && open.length) ? open[open.length - 1] : null;
 }
 
 /** Minutes late relative to WORK_START + LATE_GRACE_MIN. Negative → early. */

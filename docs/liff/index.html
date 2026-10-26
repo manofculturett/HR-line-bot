@@ -75,6 +75,16 @@
   #status.ok    { background: #eafaf0; color: #065f28; }
   #status.warn  { background: #fff8e8; color: var(--warn); }
   #status.error { background: #fdecec; color: var(--err); }
+  .fix-head { color: var(--warn); font-size: 14px; font-weight: 700; margin-bottom: 8px; }
+  .fix-note { color: var(--muted); font-size: 13px; margin: 0 0 10px; }
+  .fix-row { display: flex; gap: 10px; margin-bottom: 12px; }
+  .fix-row label { flex: 1; font-size: 12px; color: var(--muted); display: block; }
+  select, input[type="time"] {
+    width: 100%; font-family: inherit; font-size: 15px; color: var(--ink);
+    padding: 12px 10px; margin-top: 4px; border: 1px solid #d0d7de; border-radius: 10px;
+    background: #fff; -webkit-appearance: none; appearance: none;
+  }
+  button.act.small { font-size: 15px; padding: 14px 16px; }
   .notice { color: var(--muted); font-size: 12px; margin: 18px 4px 0; }
   .spinner {
     display: inline-block; width: 14px; height: 14px; margin-right: 8px;
@@ -101,6 +111,19 @@
     <button class="ghost" id="btnStatus" disabled>ตรวจสอบอีกครั้ง</button>
   </div>
   <div id="today">—</div>
+</div>
+
+<!-- Shown only when the server reports a day this employee never checked out of. Nothing
+     here is a punch: the time is self-reported and the server records it as
+     source 'self_report', so HR can see it was not scanned. -->
+<div class="card" id="fixCard" style="display:none">
+  <div class="fix-head">ลืมลงเวลาเลิกงาน?</div>
+  <p class="fix-note">ระบบไม่พบเวลาเลิกงานของวันด้านล่าง ถ้าจำเวลาได้ให้ระบุแล้วกดยืนยัน</p>
+  <div class="fix-row">
+    <label>วันที่<select id="fixDate"></select></label>
+    <label>เวลาเลิกงาน<input type="time" id="fixTime" value="18:00"></label>
+  </div>
+  <button class="act out small" id="btnFix">ยืนยันเวลาเลิกงาน</button>
 </div>
 
 <div id="status"></div>
@@ -130,6 +153,10 @@
   var btnIn      = document.getElementById('btnIn');
   var btnOut     = document.getElementById('btnOut');
   var btnStatus  = document.getElementById('btnStatus');
+  var elFixCard  = document.getElementById('fixCard');
+  var elFixDate  = document.getElementById('fixDate');
+  var elFixTime  = document.getElementById('fixTime');
+  var btnFix     = document.getElementById('btnFix');
 
   var idToken = null;
   var busy = false;
@@ -160,11 +187,64 @@
       .catch(function () { elToday.textContent = 'อ่านสถานะไม่ได้'; });
   }
 
+  /**
+   * Ask the server which days this employee never closed, and show the fix card only when
+   * there is one — a permanently visible "you forgot" panel trains people to ignore it.
+   * Read-only, and never allowed to interrupt a punch: failures are swallowed.
+   */
+  function fetchOpen() {
+    if (configMissing() || !idToken) return;
+    send({ idToken: idToken, action: 'open' })
+      .then(function (res) {
+        var days = (res && res.days) || [];
+        if (!days.length) {
+          elFixCard.style.display = 'none';
+          return;
+        }
+        elFixDate.innerHTML = '';
+        days.forEach(function (d) {
+          var opt = document.createElement('option');
+          opt.value = d.date;
+          opt.textContent = d.label + ' — เข้างาน ' + d.inHHmm;
+          elFixDate.appendChild(opt);
+        });
+        elFixCard.style.display = 'block';
+      })
+      .catch(function (err) { console.warn('open-day lookup failed:', err); });
+  }
+
+  /** Self-reported check-out. No location is requested: this is a claim about a past day. */
+  function submitFix() {
+    if (busy || configMissing() || !idToken) return;
+    var date = elFixDate.value;
+    var hhmm = elFixTime.value;
+    if (!date || !/^\d{2}:\d{2}$/.test(hhmm)) {
+      setStatus('กรุณาเลือกวันและเวลาให้ครบ', 'warn');
+      return;
+    }
+    clearStatus();
+    setBusy(true, 'กำลังบันทึกเวลา…');
+    send({ idToken: idToken, action: 'fix', date: date, hhmm: hhmm })
+      .then(function (res) {
+        setBusy(false);
+        var text = (res && res.text) ? res.text : 'ไม่ได้รับคำตอบจากเซิร์ฟเวอร์';
+        setStatus(text, (res && res.error) ? 'error' : 'ok');
+        fetchOpen();
+        fetchStatus();
+        elGreeting.textContent = 'ท่านสามารถปิดหน้านี้ได้';
+      })
+      .catch(function (err) {
+        setBusy(false);
+        setStatus(tooLongOrFailed(err).text, 'error');
+      });
+  }
+
   function setBusy(state, label) {
     busy = state;
     btnIn.disabled = state;
     btnOut.disabled = state;
     btnStatus.disabled = state;
+    btnFix.disabled = state;
     if (state && label) {
       btnIn.textContent = 'เข้างาน';
       btnOut.textContent = 'เลิกงาน';
@@ -315,6 +395,7 @@
         if (res && (res.error || res.blocked)) kind = res.blocked ? 'warn' : 'error';
         else if (text.indexOf('⚠️') !== -1) kind = 'warn';
         setStatus(text, kind);
+        fetchOpen();
         fetchStatus();
         elGreeting.textContent = 'ท่านสามารถปิดหน้านี้ได้';
       })
@@ -328,6 +409,7 @@
   btnIn.addEventListener('click', function () { punch('in'); });
   btnOut.addEventListener('click', function () { punch('out'); });
   btnStatus.addEventListener('click', fetchStatus);
+  btnFix.addEventListener('click', submitFix);
 
   // ── boot ───────────────────────────────────────────────────────────────────
   function fatal(text) {
@@ -337,6 +419,7 @@
     btnIn.disabled = true;
     btnOut.disabled = true;
     btnStatus.disabled = true;
+    btnFix.disabled = true;
     elGreeting.textContent = 'ลงเวลางาน';
     setStatus(text, 'error');
   }
@@ -369,7 +452,9 @@
         btnIn.disabled = false;
         btnOut.disabled = false;
         btnStatus.disabled = false;
+        btnFix.disabled = false;
         fetchStatus();
+        fetchOpen();
       })
       .catch(function (err) {
         console.error(err);

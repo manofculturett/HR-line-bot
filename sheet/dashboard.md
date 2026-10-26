@@ -123,6 +123,14 @@ Two things worth knowing:
 - **The range is bounded to rows 2:204**, the same 203 roster rows the dashboard provisions.
   Grow both together.
 
+**How `B3` clears.** Only by an `out` row dated to that day — `hrFixDay()` (HR) or the
+employee's own report on the LIFF page (`source=hr_fix` / `self_report`). Nothing clears it by
+inventing a time. Note the corollary the formula enforces: because it reads
+`MAXIFS(… "<"&TODAY())`, a fix row stamped *today* would never clear it, and a fix row stamped
+today would also show up in `E5` as today's check-out (with `D5` empty, so `F5` says
+`ยังไม่เข้างาน` and `G5` raises a ~780-minute early-leave flag). That is why both fix paths
+refuse today and write the real day's date.
+
 Verified 2026-10-24 against the live sheet: with the boundary at `TODAY()` the expression
 returns `out` (nothing outstanding — correct), and with the boundary at 2026-10-23 it returns
 `in` (it sees the check-in left open on 22/10).

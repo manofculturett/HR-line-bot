@@ -35,6 +35,25 @@ var MSG = {
   // purpose: HR sees it in HR_MAIN!B3, so it must not be a surprise.
   STALE_OUT_SUFFIX: '\n⚠️ ยังไม่ได้ลงเวลาเลิกงานของวันที่ {date}\nHR จะเห็นรายการนี้',
 
+  // --- a day that was never closed (v2.2.0) ---
+  // Neither fix path guesses a time: HR ran hrFixDay(), or the employee reported the time
+  // on the LIFF page. The ledger says which of the two, so an employee-facing message must
+  // never claim a punch happened.
+  FIX_LIST_HEAD:   'ยังไม่ได้ลงเวลาเลิกงาน:',
+  FIX_LIST_LINE:   '\n• {date} — เข้างาน {time}',
+  FIX_LIST_TAIL:   '\n\nถ้าจำเวลาได้ เลือกวันแล้วระบุเวลาเลิกงานได้เลย (ภายใน {days} วัน)',
+  FIX_LIST_NONE:   'ไม่มีวันที่ค้างลงเวลาเลิกงาน ✅',
+  FIX_DISABLED:    'การแจ้งเวลาเองปิดอยู่ กรุณาติดต่อ HR',
+  FIX_EXPIRED:     'เลยกำหนดแจ้งเองแล้ว (ภายใน {days} วัน) กรุณาติดต่อ HR',
+  FIX_BAD_INPUT:   'รูปแบบวันที่หรือเวลาไม่ถูกต้อง',
+  FIX_NOT_PAST:    'แก้ไขได้เฉพาะวันก่อนหน้า — วันนี้ให้กด “เลิกงาน” ตามปกติ',
+  FIX_NOT_OPEN:    'ไม่พบวันที่ค้างของวันนั้น (อาจปิดไปแล้ว) กรุณาตรวจสอบอีกครั้ง',
+  FIX_BEFORE_IN:   'เวลาเลิกงานต้องหลังเวลาเข้างาน ({time})',
+  FIX_OK_HR:       'ปิดวัน {date} แล้ว: เลิกงาน {time} ({hours} ชม. {mins} นาที)',
+  FIX_OK_SELF:     'ปิดเวลาของวันที่ {date} แล้ว ✅\n' +
+                   'เลิกงาน {time} รวม {hours} ชม. {mins} นาที\n' +
+                   '⚠️ เวลานี้เป็นการแจ้งเอง (ไม่ได้สแกน) HR จะเห็นว่าแจ้งเอง',
+
   // Sent when a punch arrives from the chat (typed word / postback) while PUNCH_REQUIRE_GEO
   // is on. LINE turns the bare URL into a tappable link.
   PUNCH_NEEDS_LIFF:

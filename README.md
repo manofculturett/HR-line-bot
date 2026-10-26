@@ -146,6 +146,33 @@ The page must stay on static hosting: Apps Script's HTML runs inside an iframe a
 `*.googleusercontent.com`, where `liff.init()` refuses the page. Setup lives in
 [apps-script/README.md](apps-script/README.md#liff-check-in).
 
+### When someone forgets to check out
+
+A forgotten check-out leaves an `in` with no `out`: the day has **no hours at all**, and it
+stays open forever. It is announced three times, and **nobody ever guesses the missing time**:
+
+| Who | When | What they get |
+|---|---|---|
+| the employee | at the next check-in | `⚠️ ยังไม่ได้ลงเวลาเลิกงานของวันที่ …` + the note `forgot_out YYYY-MM-DD` on the new row |
+| HR | 05:00 the next morning | an email listing every open day (name, date, check-in time) — exception-only, gated by `EMAIL_ENABLED` + `HR_EMAIL` exactly like the digest |
+| HR | any time they look | `HR_MAIN!B3 ค้างเลิกงาน`, which keeps naming the person until the day is closed |
+
+Closing it is one of two human decisions, both of which append one `out` row dated to **that
+day** — the ledger stays append-only and the original `in` is never edited:
+
+- **HR** runs `hrFixDay('A0124', '2026-10-26', '19:30')` from the editor (`source=hr_fix`).
+- **The employee** reports the time on the LIFF page, which shows a *ลืมลงเวลาเลิกงาน?* card
+  only when a day is actually open (`source=self_report`, within `SELF_REPORT_DAYS`). The
+  next 05:00 email repeats every self-reported time so HR can accept or query it.
+
+Why nothing closes the day automatically: any timestamp a job could write is a **fabrication**
+(`18:00`? the moment the job ran? last night's `23:59`?) and would be indistinguishable from a
+real punch a month later — in a payroll query or a wage dispute, a plausible wrong number is
+worse than an obviously missing one. It would also be *invisible*: a row stamped today reads
+as today's check-out to `E5`/`G5`, so the dashboard would show a 05:00 check-out and a 13-hour
+early-leave flag for someone who had not arrived, and B3 would stop naming anyone while the
+day stayed broken. Detection is a fact, so it goes in the `LOG` block, not the punch ledger.
+
 ### Registration — one-time invite code
 
 A LINE account proves nothing about who the person is. HR types the roster once and hands each
@@ -292,8 +319,10 @@ https://script.google.com/macros/s/<DEPLOYMENT_ID>/exec?k=<WEBHOOK_SECRET>
 ```
 
 ### Install triggers
-Run `installTriggers()` **once** from the editor to schedule the 09:15 digest (and drop any
-stale trigger).
+Run `installTriggers()` **once** from the editor to schedule both daily emails — `dailyDigest`
+at 09:15 and `forgotOutReport` at 05:00 — and drop any stale trigger (it deletes its own before
+creating, so re-running is safe). `selfTest` section [8] reports whether the 05:00 trigger is
+actually installed: a report nobody scheduled is invisible otherwise.
 
 ### Verify it works (don't trust the "Verify" button)
 The LINE console's "Verify" only checks for a 2xx — it passes even when the script is broken.
@@ -344,14 +373,15 @@ reconstructed. Full column-by-column detail in [sheet/README.md](sheet/README.md
 | `WORK_END` | `18:00` — the `ออกก่อน` column measures against this |
 | `EARLY_GRACE_MIN` | `5` — leaving within this many minutes of `WORK_END` is not flagged |
 | `WORK_DAYS` | `MON,TUE,WED,THU,FRI` — the digest sends **only** on these days |
-| `HR_EMAIL` | where the 09:15 digest goes |
+| `HR_EMAIL` | where the 09:15 digest and the 05:00 forgotten check-out report go |
 | `DIGEST_TIME` | `09:15` |
-| `EMAIL_ENABLED` | `TRUE`/`FALSE` — turns the digest on/off |
+| `EMAIL_ENABLED` | `TRUE`/`FALSE` — turns **both** emails on/off (digest and the 05:00 report) |
 | `OFFICE_LAT` / `OFFICE_LNG` | the office point the distance is measured from |
 | `GEO_RADIUS_M` | `150` — metres from that point that still count as on-site |
 | `GEO_MAX_ACC_M` | `150` — a fix worse than this is `weak_fix`, never `far` |
 | `GEO_MODE` | `OFF` / `WARN` / `BLOCK` — what a failed check does. Start `OFF` |
 | `PUNCH_REQUIRE_GEO` | `TRUE` — only the LIFF page may punch; the chat path is refused |
+| `SELF_REPORT_DAYS` | `7` — how far back an employee may close their own forgotten day on the LIFF page. `0` = off, HR only |
 
 Scanned, not read from fixed cells, so HR may add or reorder rows. Column `U` is plain text
 (otherwise Sheets parses `09:00` into a time and `getValues()` returns a `Date`).
@@ -431,7 +461,10 @@ would cost money is pushing, so the design avoids it.
 
 ## Status
 
-**v2.0.0 — live, in production use, and ฿0/month.** The Apps Script Web App is deployed (the
+**v2.2.0 — live, in production use, and ฿0/month.** Deployment `AKfycbzfyow…@17`; the `/exec`
+URL is unchanged by design (`clasp deploy -i <deploymentId>` redeploys the same id — a plain
+`clasp deploy` would mint a new URL and leave the LIFF page and webhook pointing at the old
+code). The Apps Script Web App is deployed (the
 LINE webhook is bound to the live deployment) and the health endpoint answers. Registration,
 the punch flow and the LIFF location check all run end-to-end against the live `Customer`
 sheet; the HR dashboard is audited clean. No server to keep alive, nothing hosted except one
@@ -440,8 +473,8 @@ static page — no downtime, no bill.
 **Verified 2026-10-23** against the live deployment and sheet:
 
 - Two deployments; the webhook points at the live one. A wrong `?k=` returns
-  `{"ok":false,"error":"unauthorized"}`; the health check (with the real secret) reports
-  `version: "v2"`.
+  `{"ok":false,"error":"unauthorized"}`; the health check (with the real secret) reports the
+  deployed version (`"v2.2.0"` as of 2026-10-27), which is how a stale deployment is spotted.
 - The LIFF path ran end-to-end from a phone: check-in `12:05` and check-out `16:01`, both
   `source=liff-geo`, `verdict=ok`, 16 m from the office, with `early 119m` on the out row.
 - Dashboard clean: no formula errors, 200 employee rows provisioned, named ranges
@@ -450,18 +483,31 @@ static page — no downtime, no bill.
 - No sample data left. `audit_sheet.py` → "none".
 - CONFIG as listed above; **`EMAIL_ENABLED=FALSE`** (digest off).
 
-**One thing left before real use:** the digest is switched off. Set `EMAIL_ENABLED=TRUE` when
-HR wants the 09:15 email, and run `installTriggers()` once from the editor so the
-`dailyDigest` trigger exists.
+**One thing left before real use:** both emails are switched off (`EMAIL_ENABLED=FALSE`). Set it
+to `TRUE` when HR wants the 09:15 digest and the 05:00 forgotten check-out report, and run
+`installTriggers()` once from the editor so both triggers exist.
 
 **Shipped in v2:** LIFF check-in/out with the location verdict (`DATA!S:Z`), the read-only
 "สถานะวันนี้" panel on the page, the `ออกก่อน` column, the `early Nm` ledger note, hardened
 `B1`/`B2`, block columns aligned with the live sheet, dead code removed, and `selfTest`
 extended to cover the LIFF path.
 
-**Not built:** the forgot-to-check-out report, a quota guard, the 09:00 load test, and a PDPA
-retention job for `DATA!S:Z` (the sheet keeps coordinates forever until something deletes
-them — 90 days is the suggested rule).
+**Shipped in v2.2.0:** the forgotten check-out is now surfaced instead of silently rotting —
+`HR_MAIN!B3` names whoever is stuck open, the check-in reply warns them, a 05:00 email tells HR
+(exception-only, `EMAIL_ENABLED`-gated), and the day is closed by a human decision through
+`hrFixDay()` or the employee's own report on the LIFF page. `openDaysByEmployee_` is the single
+definition of "dangling day" that all of them read. See
+[When someone forgets to check out](#when-someone-forgets-to-check-out).
+
+**Not built:** a LINE-push reminder for an open shift on the same evening (email is free, a
+push costs quota), a quota guard, the 09:00 load test, and a PDPA retention job for `DATA!S:Z`
+(the sheet keeps coordinates forever until something deletes them — 90 days is the suggested
+rule).
+
+**Known limits of the fix paths:** an overnight shift (in 22:00, out 02:00) cannot be closed by
+`hrFixDay`/self-report, because the one-pair-per-day rule keys on the calendar date and the fix
+must be late enough to follow the check-in — such a day needs a manual row. The CONFIG block
+`T4:U20` is now **full**: a new key needs `CONFIG_RANGE` widened first.
 
 **Open decisions:** whether to move `GEO_MODE` from `OFF` to `WARN` after two weeks of
 shadow data; whether to add a LINE Beacon at the door (the only presence signal a phone

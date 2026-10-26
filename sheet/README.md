@@ -48,7 +48,7 @@ match the three tabs already in the spreadsheet.
 9                                        WORK_DAYS      MON,TUE,WED,THU,FRI
 10                                       HR_EMAIL       (your address)
 11                                       DIGEST_TIME    09:15
-12                                       EMAIL_ENABLED  TRUE          ← FALSE stops the digest
+12                                       EMAIL_ENABLED  TRUE          ← FALSE stops BOTH emails
 13                                       OFFICE_LAT     13.7563       ← location check (v2)
 14                                       OFFICE_LNG     100.5018
 15                                       GEO_RADIUS_M   150
@@ -56,13 +56,17 @@ match the three tabs already in the spreadsheet.
 17                                       GEO_MODE       OFF           ← OFF | WARN | BLOCK
 18                                       EARLY_GRACE_MIN 5            ← named range; flag if out earlier than WORK_END−5m
 19                                       PUNCH_REQUIRE_GEO TRUE       ← FALSE reopens typed/postback punches
+20                                       SELF_REPORT_DAYS 7           ← v2.2; 0 = only HR may close a day
 ```
 
 - Dashboard rows 5–24 are **formulas only** — see [`dashboard.md`](dashboard.md).
 - Column **G (`ออกก่อน`)** flags an early check-out, e.g. `ก่อน 119 น.`. It never blocks
   anything: leaving early is allowed and is only made visible to HR.
 - **`B3` lists anyone who never checked out on an earlier day.** It counts punches *before*
-  today, so an open shift in progress does not appear there.
+  today, so an open shift in progress does not appear there. It clears when an `out` for that
+  day is appended — `hrFixDay()` (HR) or the employee's own report on the LIFF page — and on
+  nothing else: no job closes a day by guessing a time. The 05:00 email is the alert; `B3` is
+  the state.
 - CONFIG is a plain key/value block. The script **scans** it, so HR can add or reorder
   rows freely. Named ranges `WORK_START` and `LATE_GRACE_MIN` point at `U6` and `U7`.
 - `U` is formatted as **plain text** — otherwise Sheets parses `09:00` into a time value
@@ -85,9 +89,9 @@ match the three tabs already in the spreadsheet.
 | G | `active` | `TRUE`/`FALSE`; `FALSE` removes them from the dashboard and the digest |
 | H | `note` | free text for HR |
 
-Rows 2–4 currently hold **test employees**. Delete **only rows with an empty
-`line_user_id`** — a row that is `linked` is a real binding; keep it (and its punches in
-`DATA`).
+As of v2.2.0 the roster holds one **linked test employee** (`A0124`, note says so). Delete
+**only rows with an empty `line_user_id`** — a row that is `linked` is a real binding; keep it
+(and its punches in `DATA`).
 
 ## `DATA`
 
@@ -115,8 +119,14 @@ formulas will not match it.
 
 - `source` = `line` for a plain rich-menu tap, `liff-geo` for a punch that arrived with a
   location. Filtering `source = line` lists every punch nobody verified.
+- `source` = **`hr_fix`** or **`self_report`** on an `out` row that was *not* scanned: HR ran
+  `hrFixDay()`, or the employee reported the time on the LIFF page. These close a forgotten
+  day and are dated to that day, so they never appear on today's dashboard. `self_report` is a
+  claim; the 05:00 email repeats it to HR.
 - `note` carries `late 27m` and/or a geo verdict: `geo:ok 34m`, `geo:far 1200m`,
-  `geo:weak_fix 42m acc300m`, `geo:no_fix`.
+  `geo:weak_fix 42m acc300m`, `geo:no_fix`. A forgotten check-out is greppable as
+  `forgot_out YYYY-MM-DD` — written on the *next* check-in (the detection) and on the closing
+  row itself (`closed by HR` / `self-reported`).
 - `verdict` in S:Z is one of `ok`, `far`, `weak_fix`, `no_fix`, `no_office`. `weak_fix`
   means the phone's accuracy was too poor to judge — indoors that is normal, and it is
   **not** evidence of anything.
@@ -125,10 +135,10 @@ formulas will not match it.
 - A location is **evidence about a phone, not about a person**: it can be spoofed by a
   mock-location app. Treat a `far` verdict as a question for HR, not a conclusion.
 
-Rows 2–3 hold **sample punches** (marked `SAMPLE` in the note) so the dashboard shows
-something today. They are fake and safe to delete. A punch whose note is **empty** is
-real — never delete it. (Rule of thumb: `SAMPLE` in the note = fake; `line_user_id`
-present = a real binding.)
+There is **no sample data left** (v2.0.0 removed it; `scripts/audit_sheet.py` reports
+`none`). If a `SAMPLE` note ever reappears it is fake and safe to delete — and if it is a
+*formula* (`=TODAY()+…`), delete it immediately: it re-dates itself every night and puts a
+fake employee on the dashboard forever.
 
 ## Privacy
 

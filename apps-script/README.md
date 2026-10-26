@@ -47,7 +47,9 @@ Read [`../README.md`](../README.md) first — especially **The two Apps Script s
    Then press **Verify**. ⚠️ Verify only checks for a 2xx — it passes even when the
    script is broken. Use the manual check below instead.
 
-5. **Install triggers** — run `installTriggers()` once from the editor.
+5. **Install triggers** — run `installTriggers()` once from the editor. It schedules both
+   daily emails (`dailyDigest` 09:15, `forgotOutReport` 05:00) and deletes its own previous
+   triggers first, so re-running is safe.
 
 6. **LIFF check-in** — see the section below. Optional: the menu buttons work without it.
 
@@ -149,11 +151,12 @@ so without `-L` curl shows the redirect, not the body.
 | `config.gs` | Script Properties, tab/column layout (`TABS`/`BLOCKS`/`COLS`), CONFIG parsing |
 | `line.gs` | LINE API calls: reply, push, rich menus |
 | `sheets.gs` | Spreadsheet access, `LockService`, append-only writes |
-| `attendance.gs` | Punch logic and late/on-time classification |
+| `attendance.gs` | Punch logic and late/on-time classification; `openDaysByEmployee_` (the one definition of a dangling day) |
+| `fixes.gs` | Closing a day the bot never closed: `hrFixDay`, the LIFF self-report, and the rule that nothing guesses a time |
 | `geo.gs` | Distance maths and the location verdict (pure, no I/O) |
-| `liff.gs` | LIFF entry point, ID-token verification, geo rows |
+| `liff.gs` | LIFF entry point, ID-token verification, geo rows, `open`/`fix` routing |
 | `registration.gs` | Link-code registration state machine |
-| `triggers.gs` | Installable triggers: 09:15 digest (workday + on/off gated) |
+| `triggers.gs` | Installable triggers: 09:15 digest, 05:00 forgotten check-out report (both `EMAIL_ENABLED`-gated) |
 | `messages.gs` | All Thai user-facing copy (constants — never model-generated) |
 | `diagnostics.gs` | `selfTest` — one-click "is it actually working?" (read-only) |
 

@@ -94,7 +94,12 @@ var CONFIG_DEFAULTS = {
   // It closes the *channel*, not the fix: a phone that refuses to give a position still
   // punches from the page and is recorded as 'no_fix'. Set FALSE to reopen the text path
   // (e.g. while a phone is being replaced).
-  PUNCH_REQUIRE_GEO: 'TRUE'
+  PUNCH_REQUIRE_GEO: 'TRUE',
+
+  // How many days back an employee may close their own forgotten check-out from the LIFF
+  // page. 0 = off (HR only). A self-reported time is written as source 'self_report' —
+  // a claim, not a punch — and is put in front of HR once, in the 05:00 report.
+  SELF_REPORT_DAYS: '7'
 };
 
 /** A required secret, or a loud failure at startup rather than a silent 401 later. */
@@ -173,6 +178,12 @@ function earlyGraceMin_(cfg) {
 /** TRUE when a check-in/out must come from the LIFF page (no text or postback punches). */
 function requiresLiffPunch_(cfg) {
   return cfgBool_(cfg.PUNCH_REQUIRE_GEO);
+}
+
+/** Days back an employee may close their own forgotten day. 0 → the self-report path is off. */
+function selfReportDays_(cfg) {
+  var n = parseInt(cfg.SELF_REPORT_DAYS, 10);
+  return isNaN(n) || n < 0 ? 0 : n;
 }
 
 /**
