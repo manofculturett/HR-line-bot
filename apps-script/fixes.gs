@@ -105,9 +105,21 @@ function closeOpenDay_(employee, dateStr, hhmm, source, cfg) {
 /* ---- HR ---- */
 
 /**
- * HR: close a forgotten check-out. Run from the Apps Script editor (function dropdown):
+ * HR: close a forgotten check-out.
  *
- *     hrFixDay('A0124', '2026-10-26', '19:30')
+ * ⚠️ The editor's **Run** button calls a function with NO arguments — so with arguments this
+ *    is not runnable from the UI at all. The request therefore comes from three Script
+ *    Properties (Project Settings → Script Properties), and the function is run bare:
+ *
+ *        FIX_EMP_ID   A0124
+ *        FIX_DATE     2026-10-26
+ *        FIX_TIME     19:30
+ *
+ *    They are cleared after a SUCCESSFUL run, so a stale request cannot be applied twice; a
+ *    failed run leaves them in place so one wrong value can be fixed and re-run.
+ *
+ * Called with arguments (from code, or a test) it behaves identically and touches no
+ * properties: `hrFixDay('A0124', '2026-10-26', '19:30')`.
  *
  * Appends one `out` row (source `hr_fix`) dated to that day, so B3 stops listing the
  * employee and the check-in warning stops. Never edit or delete the original `in` — the
@@ -116,7 +128,23 @@ function closeOpenDay_(employee, dateStr, hhmm, source, cfg) {
  * @returns {string} a one-line result, also written to the Executions log.
  */
 function hrFixDay(employeeId, dateStr, hhmm) {
+  var props = PropertiesService.getScriptProperties();
+  var fromProps = (employeeId === undefined || employeeId === null);
+
+  if (fromProps) {
+    employeeId = props.getProperty('FIX_EMP_ID') || '';
+    dateStr = props.getProperty('FIX_DATE') || '';
+    hhmm = props.getProperty('FIX_TIME') || '';
+    if (!employeeId) {
+      var hint = 'ยังไม่ได้ระบุคำขอ: ตั้ง FIX_EMP_ID / FIX_DATE / FIX_TIME ใน Script ' +
+                 'Properties แล้วรันอีกครั้ง';
+      console.log(hint);
+      return hint;
+    }
+  }
+
   var out;
+  var ok = false;
   try {
     var cfg = getConfig_();
     var employee = employeeById_(employeeId);
@@ -124,6 +152,7 @@ function hrFixDay(employeeId, dateStr, hhmm) {
       out = 'ไม่พบรหัสพนักงาน "' + employeeId + '" ใน EMPLOYEES_LOG คอลัมน์ A';
     } else {
       var r = closeOpenDay_(employee, dateStr, hhmm, 'hr_fix', cfg);
+      ok = r.ok;
       out = r.ok
         ? 'ปิดวัน ' + dateStr + ' ให้ ' + employee.values[COLS.EMPLOYEES.NAME] +
           ' แล้ว: เลิกงาน ' + hhmm + ' (' + Math.floor(r.worked / 60) + ' ชม. ' +
@@ -133,6 +162,10 @@ function hrFixDay(employeeId, dateStr, hhmm) {
   } catch (err) {
     logError_('hrFixDay', err);
     out = 'ผิดพลาด: ' + (err && err.message || err);
+  }
+
+  if (fromProps && ok) {
+    ['FIX_EMP_ID', 'FIX_DATE', 'FIX_TIME'].forEach(function (k) { props.deleteProperty(k); });
   }
   console.log(out);
   return out;

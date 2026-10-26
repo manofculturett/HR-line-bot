@@ -160,7 +160,10 @@ stays open forever. It is announced three times, and **nobody ever guesses the m
 Closing it is one of two human decisions, both of which append one `out` row dated to **that
 day** — the ledger stays append-only and the original `in` is never edited:
 
-- **HR** runs `hrFixDay('A0124', '2026-10-26', '19:30')` from the editor (`source=hr_fix`).
+- **HR** sets `FIX_EMP_ID` / `FIX_DATE` / `FIX_TIME` in Script Properties and runs `hrFixDay` from
+  the editor (`source=hr_fix`). The editor's **Run** button passes no arguments, so the values
+  cannot be typed into the call — they are consumed and cleared on success, and kept on a
+  failure so one wrong value can be corrected.
 - **The employee** reports the time on the LIFF page, which shows a *ลืมลงเวลาเลิกงาน?* card
   only when a day is actually open (`source=self_report`, within `SELF_REPORT_DAYS`). The
   next 05:00 email repeats every self-reported time so HR can accept or query it.
@@ -461,7 +464,7 @@ would cost money is pushing, so the design avoids it.
 
 ## Status
 
-**v2.2.0 — live, in production use, and ฿0/month.** Deployment `AKfycbzfyow…@17`; the `/exec`
+**v2.2.1 — live, in production use, and ฿0/month.** Deployment `AKfycbzfyow…@19`; the `/exec`
 URL is unchanged by design (`clasp deploy -i <deploymentId>` redeploys the same id — a plain
 `clasp deploy` would mint a new URL and leave the LIFF page and webhook pointing at the old
 code). The Apps Script Web App is deployed (the
@@ -474,7 +477,7 @@ static page — no downtime, no bill.
 
 - Two deployments; the webhook points at the live one. A wrong `?k=` returns
   `{"ok":false,"error":"unauthorized"}`; the health check (with the real secret) reports the
-  deployed version (`"v2.2.0"` as of 2026-10-27), which is how a stale deployment is spotted.
+  deployed version (`"v2.2.1"` as of 2026-10-27), which is how a stale deployment is spotted.
 - The LIFF path ran end-to-end from a phone: check-in `12:05` and check-out `16:01`, both
   `source=liff-geo`, `verdict=ok`, 16 m from the office, with `early 119m` on the out row.
 - Dashboard clean: no formula errors, 200 employee rows provisioned, named ranges

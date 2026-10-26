@@ -4,6 +4,30 @@ Version markers follow the tags on `main`. The system is live, so "deployed" is 
 separately from "committed" — a tag whose code was never pushed with `clasp deploy` is not
 running.
 
+## v2.2.1 — 2026-10-27
+
+`hrFixDay` shipped in v2.2.0 was not actually runnable by HR: the editor's **Run** button calls a
+function with **no arguments**, so `hrFixDay('A0124', '2026-10-26', '19:30')` — the only form it
+supported — could not be invoked from the UI at all.
+
+**Deployed:** versions 18–19 → the same deployment id (URL unchanged); the health check reports
+`"v2.2.1"`.
+
+### Fixed
+
+- **`hrFixDay` reads its request from Script Properties** (`FIX_EMP_ID`, `FIX_DATE`, `FIX_TIME`)
+  when it is called with no arguments, which is what Run does. The properties are cleared after a
+  **successful** run, so a stale request can never be applied twice, and kept after a failure so
+  one wrong value can be corrected and re-run. Called with arguments it behaves exactly as before
+  (programmatic use and the test harness unchanged).
+- The 05:00 email's "how to close it" lines now describe that procedure instead of an argument
+  list nobody can type.
+
+### Notes
+
+- Found while writing the hand-over rather than by any test: the harness called the function with
+  arguments, so it never exercised the only way a human reaches it.
+
 ## v2.2.0 — 2026-10-27
 
 The forgotten check-out gets a decision path. Nothing guesses a time.

@@ -160,8 +160,8 @@ function forgotOutReport() {
               selfLines.join('\n'));
   }
   body.push('',
-            'วิธีปิดเวลาด้วยเวลาจริง: รัน hrFixDay("<รหัส>", "<yyyy-MM-dd>", "<HH:mm>")',
-            'ใน Apps Script editor หรือให้พนักงานแจ้งเองจากหน้าลงเวลา',
+            'วิธีปิดเวลาด้วยเวลาจริง: ตั้ง FIX_EMP_ID / FIX_DATE / FIX_TIME ใน Script Properties',
+            'แล้วรัน hrFixDay ใน Apps Script editor — หรือให้พนักงานแจ้งเวลาเองจากหน้าลงเวลา',
             'ระบบไม่ปิดวันให้เองโดยเดาเวลา — วันนั้นจะยังไม่มีชั่วโมงทำงานจนกว่าจะมีคนยืนยัน');
 
   GmailApp.sendEmail(cfg.HR_EMAIL, subject, body.join('\n'));
