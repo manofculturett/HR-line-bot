@@ -148,17 +148,19 @@ The page must stay on static hosting: Apps Script's HTML runs inside an iframe a
 
 ### When someone forgets to check out
 
-A forgotten check-out leaves an `in` with no `out`: the day has **no hours at all**, and it
-stays open forever. It is announced three times, and **nobody ever guesses the missing time**:
+A forgotten check-out leaves an `in` with no `out`. Two things must not happen: the day must
+not keep **no hours**, and nobody may invent the missing time. So nothing guesses — and
+nothing is left open for ever either.
 
 | Who | When | What they get |
 |---|---|---|
 | the employee | at the next check-in | `⚠️ ยังไม่ได้ลงเวลาเลิกงานของวันที่ …` + the note `forgot_out YYYY-MM-DD` on the new row |
-| HR | 05:00 the next morning | an email listing every open day (name, date, check-in time) — exception-only, gated by `EMAIL_ENABLED` + `HR_EMAIL` exactly like the digest |
+| HR | 05:00 the next morning | an email listing what needs review — exception-only, gated by `EMAIL_ENABLED` + `HR_EMAIL` exactly like the digest |
+| nobody | 05:00, once the day is `AUTO_CLOSE_DAYS` old (default `3`) | **self-heal**: the day is closed at `WORK_END` with `source=auto_close`, and reported in that morning's email |
 | HR | any time they look | `HR_MAIN!B3 ค้างเลิกงาน`, which keeps naming the person until the day is closed |
 
-Closing it is one of two human decisions, both of which append one `out` row dated to **that
-day** — the ledger stays append-only and the original `in` is never edited:
+The two human paths write the real time, as one `out` row dated to **that day** — the original
+`in` is never edited:
 
 - **HR** sets `FIX_EMP_ID` / `FIX_DATE` / `FIX_TIME` in Script Properties and runs `hrFixDay` from
   the editor (`source=hr_fix`). The editor's **Run** button passes no arguments, so the values
@@ -168,13 +170,31 @@ day** — the ledger stays append-only and the original `in` is never edited:
   only when a day is actually open (`source=self_report`, within `SELF_REPORT_DAYS`). The
   next 05:00 email repeats every self-reported time so HR can accept or query it.
 
-Why nothing closes the day automatically: any timestamp a job could write is a **fabrication**
-(`18:00`? the moment the job ran? last night's `23:59`?) and would be indistinguishable from a
-real punch a month later — in a payroll query or a wage dispute, a plausible wrong number is
-worse than an obviously missing one. It would also be *invisible*: a row stamped today reads
-as today's check-out to `E5`/`G5`, so the dashboard would show a 05:00 check-out and a 13-hour
-early-leave flag for someone who had not arrived, and B3 would stop naming anyone while the
-day stayed broken. Detection is a fact, so it goes in the `LOG` block, not the punch ledger.
+**The fallback, and why it is not a guess.** A day nobody confirms used to stay open for ever:
+a Friday shift forgotten before a weekend had no hours, no row, and — the moment the employee
+worked a normal Monday — not even a warning. Now the 05:00 sweep closes any day that has been
+open for `AUTO_CLOSE_DAYS` at `WORK_END` **on that day**, the shift end the company declared in
+CONFIG. It is written with its own `source=auto_close` and the note
+`auto_close YYYY-MM-DD HH:mm scheduled_end`, so it can never be mistaken for an observation,
+and the email states plainly that the time is the shift end and needs confirming. A Friday
+forgotten shift is therefore closed on Monday at 05:00, before the new week starts.
+
+The `auto_close` row is a **placeholder, not history**: when the employee or HR later supplies
+the real time, that row is *replaced in place* (`replaced auto_close` in the note) rather than
+appended beside it — a second `out` would leave the dashboard's `MAX(...)` preferring the later
+placeholder over the earlier truth. `AUTO_CLOSE_DAYS=0` switches the fallback off.
+
+The sweep fills in a number; it does not take the day away from the employee. An auto-closed
+day **stays in the LIFF picker** for the rest of `SELF_REPORT_DAYS`, labelled
+`(ปิดอัตโนมัติ 18:00)`, so a person who remembers the real time later can still correct it —
+which is why the two windows can differ (`3` and `7`) without contradicting each other.
+
+Two limits are deliberate. A day whose check-in is at or after `WORK_END` is never auto-closed
+(there is no defensible shift end for it) — it stays open and stays in the email. And detection
+pairs a check-out only with a check-in from the previous `MAX_SHIFT_HOURS` (24 h): a Monday
+check-out cannot "close" a Friday check-in, which is how a forgotten day used to disappear the
+moment the person worked normally again. An overnight shift (in 22:00, out 02:00) is well
+inside that window.
 
 ### Registration — one-time invite code
 
@@ -385,9 +405,12 @@ reconstructed. Full column-by-column detail in [sheet/README.md](sheet/README.md
 | `GEO_MODE` | `OFF` / `WARN` / `BLOCK` — what a failed check does. Start `OFF` |
 | `PUNCH_REQUIRE_GEO` | `TRUE` — only the LIFF page may punch; the chat path is refused |
 | `SELF_REPORT_DAYS` | `7` — how far back an employee may close their own forgotten day on the LIFF page. `0` = off, HR only |
+| `AUTO_CLOSE_DAYS` | `3` — a day left open this many days is closed at `WORK_END` by the 05:00 sweep (`source=auto_close`). `0` = off (a day then waits for a person) |
 
 Scanned, not read from fixed cells, so HR may add or reorder rows. Column `U` is plain text
-(otherwise Sheets parses `09:00` into a time and `getValues()` returns a `Date`).
+(otherwise Sheets parses `09:00` into a time and `getValues()` returns a `Date`). The scan
+covers `T4:U28`; rows below the block are reserved, because anything typed in `T` becomes a
+config key.
 
 ---
 
@@ -473,6 +496,11 @@ the punch flow and the LIFF location check all run end-to-end against the live `
 sheet; the HR dashboard is audited clean. No server to keep alive, nothing hosted except one
 static page — no downtime, no bill.
 
+**v2.3.0 is committed, not deployed.** To put it live: `clasp push`, redeploy the same
+deployment id, add the `AUTO_CLOSE_DAYS` row in `HR_MAIN!T21:U21` (the block is read as
+`T4:U28` now), and re-run `selfTest` — section [8] says whether the key was found in the block
+or the default is being used.
+
 **Verified 2026-10-23** against the live deployment and sheet:
 
 - Two deployments; the webhook points at the live one. A wrong `?k=` returns
@@ -502,6 +530,13 @@ extended to cover the LIFF path.
 definition of "dangling day" that all of them read. See
 [When someone forgets to check out](#when-someone-forgets-to-check-out).
 
+**Shipped in v2.3.0:** the forgotten check-out now heals itself instead of hanging. The 05:00
+run closes any day left open for `AUTO_CLOSE_DAYS` at `WORK_END` (`source=auto_close`, a
+placeholder a confirmed time replaces in place), and the email was rewritten as a formal Thai
+report with Buddhist-era dates and a section per case. Detection also stopped losing a
+forgotten day when the employee later worked a normal one (`MAX_SHIFT_HOURS` pairing). See
+[When someone forgets to check out](#when-someone-forgets-to-check-out).
+
 **Not built:** a LINE-push reminder for an open shift on the same evening (email is free, a
 push costs quota), a quota guard, the 09:00 load test, and a PDPA retention job for `DATA!S:Z`
 (the sheet keeps coordinates forever until something deletes them — 90 days is the suggested
@@ -509,8 +544,11 @@ rule).
 
 **Known limits of the fix paths:** an overnight shift (in 22:00, out 02:00) cannot be closed by
 `hrFixDay`/self-report, because the one-pair-per-day rule keys on the calendar date and the fix
-must be late enough to follow the check-in — such a day needs a manual row. The CONFIG block
-`T4:U20` is now **full**: a new key needs `CONFIG_RANGE` widened first.
+must be late enough to follow the check-in — such a day needs a manual row. `HR_MAIN!B3` is a
+*latest-punch* test while the bot's own detector is a per-day pairing, so in the narrow case
+"an older day is dangling **and** a later day closed normally", B3 stays quiet while the 05:00
+report still lists the day; making B3 per-day needs a formula change in the live sheet
+(`sheet/dashboard.md`).
 
 **Open decisions:** whether to move `GEO_MODE` from `OFF` to `WARN` after two weeks of
 shadow data; whether to add a LINE Beacon at the door (the only presence signal a phone

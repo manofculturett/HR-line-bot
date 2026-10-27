@@ -13,7 +13,8 @@
  *   7. LIFF punch path              → LIFF_ID / LIFF_CHANNEL_ID set and distinct, and the
  *                                     geo block headers are where config.gs says they are
  *   8. Forgotten check-outs         → who is stuck open, whether the 05:00 trigger exists,
- *                                     and whether the report would actually send
+ *                                     whether the report would actually send, and whether the
+ *                                     auto-close (self-heal) policy can actually run
  *
  * Everything here is read-only. It never writes a punch.
  */
@@ -179,6 +180,21 @@ function selfTest() {
     }
     return 'selfReportDays=' + (days || 'OFF') +
            ' email=' + (cfgBool_(c.EMAIL_ENABLED) ? 'ON → ' + (c.HR_EMAIL || 'HR_EMAIL UNSET') : 'OFF');
+  });
+  check('auto-close (self-heal) policy', function () {
+    var c = getConfig_();
+    var days = autoCloseDays_(c);
+    // The key is read from the CONFIG block; if HR never added the row the default applies
+    // silently, which looks identical to a working setting. Say which one it is.
+    var inBlock = getTab_(TABS.HR_MAIN).getRange(HR_MAIN.CONFIG_RANGE).getValues()
+      .some(function (r) { return String(r[0]).trim() === 'AUTO_CLOSE_DAYS'; });
+    var tail = inBlock ? '' : ' [row missing in ' + HR_MAIN.CONFIG_RANGE + ' — default in use]';
+    if (!days) return 'OFF (AUTO_CLOSE_DAYS=0) — a forgotten day waits for a person' + tail;
+    if (parseHhMm_(c.WORK_END) === null) {
+      throw new Error('AUTO_CLOSE_DAYS=' + days + ' but WORK_END does not parse as HH:MM ' +
+                      '("' + c.WORK_END + '") — nothing would be closed');
+    }
+    return 'ON — a day open ' + days + '+ days is closed at WORK_END (' + c.WORK_END + ')' + tail;
   });
   check('forgotOutReport trigger', function () {
     var t = ScriptApp.getProjectTriggers().filter(function (x) {

@@ -57,6 +57,7 @@ match the three tabs already in the spreadsheet.
 18                                       EARLY_GRACE_MIN 5            ← named range; flag if out earlier than WORK_END−5m
 19                                       PUNCH_REQUIRE_GEO TRUE       ← FALSE reopens typed/postback punches
 20                                       SELF_REPORT_DAYS 7           ← v2.2; 0 = only HR may close a day
+21                                       AUTO_CLOSE_DAYS 3            ← v2.3; close at WORK_END after 3 days, 0 = off
 ```
 
 - Dashboard rows 5–24 are **formulas only** — see [`dashboard.md`](dashboard.md).
@@ -64,9 +65,11 @@ match the three tabs already in the spreadsheet.
   anything: leaving early is allowed and is only made visible to HR.
 - **`B3` lists anyone who never checked out on an earlier day.** It counts punches *before*
   today, so an open shift in progress does not appear there. It clears when an `out` for that
-  day is appended — `hrFixDay()` (HR) or the employee's own report on the LIFF page — and on
-  nothing else: no job closes a day by guessing a time. The 05:00 email is the alert; `B3` is
-  the state.
+  day is appended — `hrFixDay()` (HR), the employee's own report on the LIFF page, or the
+  05:00 `auto_close` sweep (see `AUTO_CLOSE_DAYS`) — and on nothing else: no job invents a
+  time, it uses `WORK_END` and says so. The 05:00 email is the alert; `B3` is the state.
+  `B3` is a *latest-punch* test, so it goes quiet when an older day is dangling but a later day
+  closed normally — the emailed report still lists that day.
 - CONFIG is a plain key/value block. The script **scans** it, so HR can add or reorder
   rows freely. Named ranges `WORK_START` and `LATE_GRACE_MIN` point at `U6` and `U7`.
 - `U` is formatted as **plain text** — otherwise Sheets parses `09:00` into a time value
@@ -123,6 +126,11 @@ formulas will not match it.
   `hrFixDay()`, or the employee reported the time on the LIFF page. These close a forgotten
   day and are dated to that day, so they never appear on today's dashboard. `self_report` is a
   claim; the 05:00 email repeats it to HR.
+- `source` = **`auto_close`** on an `out` row the 05:00 sweep wrote because nobody confirmed the
+  day: the time is `WORK_END`, the note says `auto_close YYYY-MM-DD HH:mm scheduled_end`, and it
+  is a **placeholder** — when a person later supplies the real time, that row is rewritten
+  (`replaced auto_close`) rather than duplicated. Filter `source = auto_close` to list every
+  day whose hours are the shift end rather than an observation.
 - `note` carries `late 27m` and/or a geo verdict: `geo:ok 34m`, `geo:far 1200m`,
   `geo:weak_fix 42m acc300m`, `geo:no_fix`. A forgotten check-out is greppable as
   `forgot_out YYYY-MM-DD` — written on the *next* check-in (the detection) and on the closing

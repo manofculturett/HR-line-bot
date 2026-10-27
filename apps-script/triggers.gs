@@ -91,31 +91,33 @@ function missingToday_(cfg) {
 
 /**
  * 05:00 — yesterday is over, so any shift still open from before today is a forgotten
- * check-out. This is an EXCEPTION report: it only sends when there is something to say,
- * because a nightly "all good" email is noise HR learns to filter out.
+ * check-out. This job does two things, in this order:
  *
- * Two sections, both about days the bot could not close on its own:
- *   - still open  → the day has no check-out, so it has no hours at all
- *   - self-reported in the last 24h → the employee closed it from the LIFF page, and a
- *     self-reported time is HR's to accept or query
+ *   1. SELF-HEAL — `autoCloseStaleDays_` closes a day that has been open for
+ *      AUTO_CLOSE_DAYS at WORK_END (source `auto_close`). Not gated by the email switches:
+ *      a Friday shift nobody confirms must stop squatting in B3 over the weekend, whether
+ *      or not HR wants mail. This is the case that used to hang forever.
+ *   2. REPORT — an EXCEPTION email, only when there is something to say, because a nightly
+ *      "all good" message is noise HR learns to filter out. Three sections:
+ *        - still open          → no check-out at all, so no hours
+ *        - auto-closed          → closed at the shift end; HR should confirm with the person
+ *        - self-reported (24h)  → the employee closed it from the LIFF page; HR's to accept
  *
  * Gated exactly like dailyDigest: `EMAIL_ENABLED` (HR_MAIN CONFIG) and `HR_EMAIL`. Email
  * rather than a LINE push, for the same reason as the digest: a push per offender would
  * eat the monthly message quota; email costs nothing.
  *
- * ⚠️ This reports; it never writes an attendance row. Inventing a check-out time to "clean
- *    up" the sheet would put a number in the ledger that nobody observed — see fixes.gs.
+ * ⚠️ The only attendance row this job can write is an `auto_close` placeholder, and only
+ *    through fixes.gs. It never picks a time of its own.
  */
 function forgotOutReport() {
   var cfg = getConfig_();
-
-  if (!cfgBool_(cfg.EMAIL_ENABLED)) {
-    console.log('forgotOutReport skipped: EMAIL_ENABLED is off (HR_MAIN CONFIG)');
-    return;
-  }
-  if (!cfg.HR_EMAIL) { console.warn('HR_EMAIL not set; forgotOutReport skipped'); return; }
-
   var tz = cfg.TZ;
+
+  var healed = autoCloseStaleDays_(cfg);
+
+  // Read the open days AFTER the sweep, so a day it just closed is reported once, in its
+  // own section, instead of also being listed as "still open".
   var open = openDaysByEmployee_(tz);
 
   var names = {};
@@ -124,52 +126,115 @@ function forgotOutReport() {
     names[String(r.values[COLS.EMPLOYEES.ID]).trim()] = String(r.values[COLS.EMPLOYEES.NAME]);
   });
 
-  var openLines = [];
+  var openDays = [];
   Object.keys(open).forEach(function (id) {
     // A leaver is not chased: a report that grows names nobody will ever clear is how HR
     // learns to ignore the report. Their rows stay in DATA and hrFixDay still works on them.
     if (!names[id]) return;
-    open[id].forEach(function (p) {
-      openLines.push('- ' + names[id] + ' (' + id + ') เข้างาน ' +
-                     Utilities.formatDate(p.ts, tz, 'dd/MM HH:mm') + ' — ยังไม่ลงเวลาเลิกงาน');
-    });
+    open[id].forEach(function (p) { openDays.push({ id: id, name: names[id], ts: p.ts }); });
   });
-  var selfLines = selfReportedRecently_(tz);
+
+  var selfReports = selfReportedRecently_(tz);
+  var total = openDays.length + healed.closed.length + selfReports.length;
 
   // One LOG row per run, so "the trigger ran and found nothing" stays distinguishable from
   // "the trigger never ran" — the silent-failure mode this project keeps guarding against.
   logEvent_('', '', 'report:forgot_out',
-            openLines.length + ' open, ' + selfLines.length + ' self-reported');
+            openDays.length + ' open, ' + healed.closed.length + ' auto-closed, ' +
+            selfReports.length + ' self-reported');
 
-  if (!openLines.length && !selfLines.length) {
-    console.log('forgotOutReport: nothing outstanding');
+  if (!total) { console.log('forgotOutReport: nothing outstanding'); return; }
+
+  if (!cfgBool_(cfg.EMAIL_ENABLED)) {
+    console.log('forgotOutReport skipped the email: EMAIL_ENABLED is off (HR_MAIN CONFIG) — ' +
+                total + ' item(s) outstanding');
     return;
   }
+  if (!cfg.HR_EMAIL) { console.warn('HR_EMAIL not set; forgotOutReport skipped'); return; }
 
-  var subject = openLines.length
-    ? 'ค้างเลิกงาน ' + openLines.length + ' รายการ — ' + todayLabel_(tz)
-    : 'พนักงานแจ้งเวลาเลิกงานเอง — ' + todayLabel_(tz);
-
-  var body = [];
-  if (openLines.length) {
-    body.push('ยังไม่ปิดเวลาออก ' + openLines.length + ' รายการ:', openLines.join('\n'));
-  }
-  if (selfLines.length) {
-    if (body.length) body.push('');
-    body.push('พนักงานแจ้งเวลาเองใน 24 ชม. ที่ผ่านมา (ไม่ได้สแกน — โปรดตรวจสอบ):',
-              selfLines.join('\n'));
-  }
-  body.push('',
-            'วิธีปิดเวลาด้วยเวลาจริง: ตั้ง FIX_EMP_ID / FIX_DATE / FIX_TIME ใน Script Properties',
-            'แล้วรัน hrFixDay ใน Apps Script editor — หรือให้พนักงานแจ้งเวลาเองจากหน้าลงเวลา',
-            'ระบบไม่ปิดวันให้เองโดยเดาเวลา — วันนั้นจะยังไม่มีชั่วโมงทำงานจนกว่าจะมีคนยืนยัน');
-
-  GmailApp.sendEmail(cfg.HR_EMAIL, subject, body.join('\n'));
-  console.log('forgotOutReport: ' + openLines.length + ' open, ' +
-              selfLines.length + ' self-reported → ' + cfg.HR_EMAIL);
+  var mail = buildForgotOutMail_(cfg, openDays, healed.closed, selfReports);
+  GmailApp.sendEmail(cfg.HR_EMAIL, mail.subject, mail.body);
+  console.log('forgotOutReport: ' + openDays.length + ' open, ' +
+              healed.closed.length + ' auto-closed, ' + selfReports.length +
+              ' self-reported → ' + cfg.HR_EMAIL);
 }
 
-/** Self-reported check-outs written in the last 24h, as report lines (read from the LOG block). */
+/**
+ * The email itself. All wording lives in messages.gs (HR_MAIL); this only decides layout,
+ * numbering and which policy paragraph is true right now.
+ *
+ * @returns {{subject:string, body:string}}
+ */
+function buildForgotOutMail_(cfg, openDays, autoClosed, selfReports) {
+  var tz = cfg.TZ;
+  var now = new Date();
+  var todayLabel = thaiDateLabel_(now, tz);
+  var total = openDays.length + autoClosed.length + selfReports.length;
+  var autoDays = autoCloseDays_(cfg);
+
+  var out = [];
+  out.push(HR_MAIL.GREETING, '');
+  out.push(fill_(HR_MAIL.INTRO, { date: todayLabel, time: hhmm_(now, tz), n: total }), '');
+
+  if (openDays.length) {
+    out.push(fill_(HR_MAIL.OPEN_HEAD, { n: openDays.length }));
+    openDays.forEach(function (d, i) {
+      out.push(HR_MAIL.ITEM_INDENT + fill_(HR_MAIL.ITEM_OPEN, {
+        n: i + 1, id: d.id, name: d.name,
+        in_date: thaiDateLabel_(d.ts, tz), in_time: hhmm_(d.ts, tz)
+      }));
+    });
+    out.push('', HR_MAIL.OPEN_NOTE, '');
+  }
+
+  if (autoClosed.length) {
+    out.push(fill_(HR_MAIL.AUTO_HEAD, { n: autoClosed.length }));
+    autoClosed.forEach(function (d, i) {
+      out.push(HR_MAIL.ITEM_INDENT + fill_(HR_MAIL.ITEM_AUTO, {
+        n: i + 1, id: d.id, name: d.name,
+        in_date: thaiDateLabel_(d.date, tz), in_time: d.inTime, out_time: d.outTime
+      }));
+    });
+    out.push('', fill_(HR_MAIL.AUTO_NOTE, { end: cfg.WORK_END }), '');
+  }
+
+  if (selfReports.length) {
+    out.push(fill_(HR_MAIL.SELF_HEAD, { n: selfReports.length }));
+    selfReports.forEach(function (s, i) {
+      out.push(HR_MAIL.ITEM_INDENT + selfReportItem_(s, i + 1, tz));
+    });
+    out.push('', HR_MAIL.SELF_NOTE, '');
+  }
+
+  out.push(HR_MAIL.ACTIONS_HEAD);
+  var selfDays = selfReportDays_(cfg);
+  if (selfDays) out.push(fill_(HR_MAIL.ACTION_EMPLOYEE, { days: selfDays }));
+  out.push(HR_MAIL.ACTION_HR);
+  out.push(autoDays ? fill_(HR_MAIL.ACTION_AUTO_ON, { days: autoDays, end: cfg.WORK_END })
+                    : HR_MAIL.ACTION_AUTO_OFF);
+  out.push('', HR_MAIL.FOOTER);
+
+  return { subject: fill_(HR_MAIL.SUBJECT, { n: total, date: todayLabel }),
+           body: out.join('\n') };
+}
+
+/**
+ * One self-report line. The LOG status is `out yyyy-MM-dd HH:mm` (plus ` replaced auto_close`
+ * when the employee corrected a placeholder), so it is parsed for a readable date/time and
+ * echoed verbatim when it does not match — never dropped, never reformatted by guesswork.
+ */
+function selfReportItem_(entry, n, tz) {
+  var reported = thaiDateLabel_(entry.ts, tz) + ' ' + hhmm_(entry.ts, tz) + ' น.';
+  var m = /^out (\d{4}-\d{2}-\d{2}) (\d{2}:\d{2})$/.exec(entry.status);
+  if (!m) {
+    return fill_(HR_MAIL.ITEM_SELF_RAW, { n: n, id: entry.id, status: entry.status,
+                                          reported: reported });
+  }
+  return fill_(HR_MAIL.ITEM_SELF, { n: n, id: entry.id, out_date: thaiDateLabel_(m[1], tz),
+                                    out_time: m[2], reported: reported });
+}
+
+/** Self-reported check-outs written in the last 24h (read from the LOG block). */
 function selfReportedRecently_(tz) {
   var since = new Date(Date.now() - 24 * 3600 * 1000);
   var out = [];
@@ -178,9 +243,8 @@ function selfReportedRecently_(tz) {
     if (String(v[COLS.LOG.ACTION]).trim() !== 'self_report') return;
     var ts = v[COLS.LOG.TS];
     if (!(ts instanceof Date) || ts < since) return;
-    out.push('- ' + String(v[COLS.LOG.USER_ID]).trim() + ' — ' +
-             String(v[COLS.LOG.STATUS]).trim() +
-             ' (แจ้งเมื่อ ' + Utilities.formatDate(ts, tz, 'dd/MM HH:mm') + ')');
+    out.push({ id: String(v[COLS.LOG.USER_ID]).trim(),
+               status: String(v[COLS.LOG.STATUS]).trim(), ts: ts });
   });
   return out;
 }

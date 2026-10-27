@@ -110,7 +110,9 @@ reporting 114 instead of 119 would make the sheet disagree with the chat.
 The question this answers is "is anyone's shift **still open from a previous day**", so the
 test is *the last punch before today was an `in`* — not "more ins than outs". Counting also
 flags a historical day that had two pairs: true, but never actionable on a today-board, and a
-cell that nags about old data teaches HR to ignore it.
+cell that nags about old data teaches HR to ignore it. (The trade-off: this is a
+latest-punch test, so it cannot see an older dangling day once a later one closed normally —
+see *Where `B3` and the bot disagree* below.)
 
 Today's open shift is excluded by design (`"<"&TODAY()`), or everyone still at work would be
 listed.
@@ -123,13 +125,23 @@ Two things worth knowing:
 - **The range is bounded to rows 2:204**, the same 203 roster rows the dashboard provisions.
   Grow both together.
 
-**How `B3` clears.** Only by an `out` row dated to that day — `hrFixDay()` (HR) or the
-employee's own report on the LIFF page (`source=hr_fix` / `self_report`). Nothing clears it by
-inventing a time. Note the corollary the formula enforces: because it reads
+**How `B3` clears.** Only by an `out` row dated to that day — `hrFixDay()` (HR), the
+employee's own report on the LIFF page (`source=hr_fix` / `self_report`), or the 05:00
+`auto_close` sweep, which uses `WORK_END` and marks the row as a placeholder. Nothing clears it
+by inventing a time. Note the corollary the formula enforces: because it reads
 `MAXIFS(… "<"&TODAY())`, a fix row stamped *today* would never clear it, and a fix row stamped
 today would also show up in `E5` as today's check-out (with `D5` empty, so `F5` says
 `ยังไม่เข้างาน` and `G5` raises a ~780-minute early-leave flag). That is why both fix paths
 refuse today and write the real day's date.
+
+**Where `B3` and the bot disagree, by design.** `B3` asks one question — *was the employee's
+last punch before today an `in`?* — while `openDaysByEmployee_` pairs each `out` with the
+check-ins from the previous 24 h, so a forgotten Friday stays dangling even after a normal
+Monday. In that corner `B3` reads `ไม่มีรายการค้าง ✅` while the 05:00 email still lists the day
+and the sweep still closes it. Making `B3` per-day means rewriting it around a per-day
+grouping (a `MAP` over `SORT(UNIQUE(...))`, or a helper column) — not done, because the email
+already carries the information and a wrong formula on a live sheet costs more than the
+mismatch.
 
 Verified 2026-10-24 against the live sheet: with the boundary at `TODAY()` the expression
 returns `out` (nothing outstanding — correct), and with the boundary at 2026-10-23 it returns

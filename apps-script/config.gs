@@ -63,7 +63,12 @@ var HR_MAIN = {
   LAST_ACTIVITY_CELL: 'B2',    // formula: latest punch time today (was a script heartbeat)
   FIRST_DATA_ROW: 5,           // header is row 4
   LAST_DATA_ROW: 204,          // provisioned by scripts/setup_dashboard.py (200 rows)
-  CONFIG_RANGE: 'T4:U20'       // key/value pairs, scanned rather than fixed rows
+
+  // Key/value pairs, scanned rather than read from fixed rows. Widened from T4:U20 when
+  // AUTO_CLOSE_DAYS arrived: the block was exactly full, so a new row typed below it fell
+  // outside the read and the default silently applied. Keep this range ahead of the last row.
+  // Rows below the block are reserved — anything typed in T becomes a config key.
+  CONFIG_RANGE: 'T4:U28'
 };
 
 /** Defaults for anything missing from the CONFIG block. */
@@ -99,7 +104,14 @@ var CONFIG_DEFAULTS = {
   // How many days back an employee may close their own forgotten check-out from the LIFF
   // page. 0 = off (HR only). A self-reported time is written as source 'self_report' —
   // a claim, not a punch — and is put in front of HR once, in the 05:00 report.
-  SELF_REPORT_DAYS: '7'
+  SELF_REPORT_DAYS: '7',
+
+  // Self-heal for a day nobody ever confirmed. Once a check-in has been open for this many
+  // days, the 05:00 sweep closes it at WORK_END on that day, with source 'auto_close' — a
+  // declared shift end, not an invented time, and visibly not a punch. 3 closes a Friday
+  // forgotten shift on Monday morning, so the weekend cannot leave a permanent hole.
+  // 0 = off (a day then stays open until a person confirms it).
+  AUTO_CLOSE_DAYS: '3'
 };
 
 /** A required secret, or a loud failure at startup rather than a silent 401 later. */
@@ -183,6 +195,12 @@ function requiresLiffPunch_(cfg) {
 /** Days back an employee may close their own forgotten day. 0 → the self-report path is off. */
 function selfReportDays_(cfg) {
   var n = parseInt(cfg.SELF_REPORT_DAYS, 10);
+  return isNaN(n) || n < 0 ? 0 : n;
+}
+
+/** Days a forgotten day is left confirmed before the sweep closes it. 0 → auto-close is off. */
+function autoCloseDays_(cfg) {
+  var n = parseInt(cfg.AUTO_CLOSE_DAYS, 10);
   return isNaN(n) || n < 0 ? 0 : n;
 }
 

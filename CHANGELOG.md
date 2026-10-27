@@ -4,6 +4,62 @@ Version markers follow the tags on `main`. The system is live, so "deployed" is 
 separately from "committed" — a tag whose code was never pushed with `clasp deploy` is not
 running.
 
+## v2.3.0 — 2026-10-27
+
+A forgotten check-out stops hanging. It is still never *guessed* — the fallback uses the shift
+end the company itself declared, marks the row so nobody can read it as a punch, and is replaced
+the moment a person confirms the real time.
+
+**Deployed:** not yet. `clasp push` + redeploy the same deployment id, and add
+`AUTO_CLOSE_DAYS = 3` at `HR_MAIN!T21:U21` (the CONFIG block is now read as `T4:U28`; it was
+full at `U20`).
+
+### Added
+
+- **Self-heal — `autoCloseStaleDays_`** (`fixes.gs`), run by `forgotOutReport` at 05:00 *before*
+  the report is built: any day still open after `AUTO_CLOSE_DAYS` (CONFIG, default `3`) is
+  closed at `WORK_END` **on that day**, with `source=auto_close` and the note
+  `auto_close YYYY-MM-DD HH:mm scheduled_end`. A Friday forgotten shift is closed Monday at
+  05:00, so a weekend can no longer leave a day open for ever. Not gated by `EMAIL_ENABLED` —
+  data hygiene is not a notification. One `auto_close` LOG row per closing day.
+- **`AUTO_CLOSE_DAYS` CONFIG key** (`3`; `0` = off). `CONFIG_RANGE` widened `T4:U20` → `T4:U28`.
+- **`selfTest` section [8]** now reports whether the policy can run: days, `WORK_END` parseable,
+  and whether the key was found in the block or the default is in use.
+- A day whose check-in is at/after `WORK_END` is deliberately **not** auto-closed — it has no
+  defensible shift end, so it stays open and stays in the email.
+
+### Changed
+
+- **The 05:00 email was rewritten for HR, not for a developer**: `[ระบบลงเวลาทำงาน]` subject,
+  `เรียน ฝ่ายทรัพยากรบุคคล`, Buddhist-era dates (`26 ตุลาคม 2569`), one numbered section per
+  case (ยังไม่ลงเวลาเลิกงาน / ระบบปิดเวลาออกอัตโนมัติ / พนักงานแจ้งเวลาเอง), an
+  `แนวทางการดำเนินการ` block that states the real procedure, and a no-reply footer. All copy
+  moved to `messages.gs` (`HR_MAIL` + `thaiDateLabel_`), so changing wording never touches
+  logic. Gone: "ยังไม่ปิดเวลาออก", "เดาเวลา", `dd/MM` dates and raw `out 2026-10-26 20:00` log
+  strings.
+- **`openDaysByEmployee_` pairs an `out` only with check-ins from the previous
+  `MAX_SHIFT_HOURS` (24 h)** instead of clearing every open check-in. The old rule silently
+  swallowed a forgotten Friday as soon as the employee worked a normal Monday — no warning, no
+  report, no row, no hours. Overnight shifts (in 22:00, out 02:00) still pair.
+- **An `auto_close` row is a placeholder and is REPLACED in place** (`sheets.replaceBlockRow_`,
+  note `replaced auto_close`) when HR or the employee supplies the real time. Appending a second
+  `out` would leave the dashboard's `MAX(...)` preferring the later placeholder over the earlier
+  truth.
+- **`fixList_` also offers auto-closed days** for the rest of `SELF_REPORT_DAYS`, labelled
+  `(ปิดอัตโนมัติ HH:mm)` in the picker, so a 3-day heal does not silently shorten the employee's
+  7-day window. No page change needed: `docs/liff/index.html` renders `label — เข้างาน HH:mm`
+  from the entry.
+
+### Notes
+
+- `B3` remains a latest-punch formula, so it can still be quiet while the report lists an older
+  dangling day; making it per-day needs a live-sheet formula change. Documented in
+  `sheet/dashboard.md`, not attempted here.
+- Verified with the Node harness against the stubbed Apps Script runtime seeded from the live
+  sheet: 42 assertions, including a full Friday→Saturday→Sunday→Monday timeline, placeholder
+  replacement from both human paths, idempotency, `AUTO_CLOSE_DAYS=0`, unparseable `WORK_END`,
+  the 24-hour pairing window, and no regressions on the punch/fix paths.
+
 ## v2.2.1 — 2026-10-27
 
 `hrFixDay` shipped in v2.2.0 was not actually runnable by HR: the editor's **Run** button calls a

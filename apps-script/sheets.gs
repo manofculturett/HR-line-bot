@@ -75,6 +75,20 @@ function appendToBlock_(blockKey, row) {
   return target;
 }
 
+/**
+ * Overwrite one existing row of a block.
+ *
+ * The punch ledger is append-only for anything a PERSON observed. The one exception is the
+ * `auto_close` placeholder the sweep writes (see fixes.gs): a machine row that stands in for
+ * a missing punch is REPLACED when a human supplies the real time — appending a second `out`
+ * would leave two, and every time-based reader (the dashboard's `MAX(...)`) would keep
+ * trusting the later placeholder over the earlier truth.
+ */
+function replaceBlockRow_(blockKey, sheetRow, row) {
+  var b = BLOCKS[blockKey];
+  getTab_(b.tab).getRange(sheetRow, b.col + 1, 1, b.width).setValues([padRow_(row, b.width)]);
+}
+
 function firstFreeRowInBlock_(sh, b) {
   var last = sh.getLastRow();
   if (last < 2) return 2;

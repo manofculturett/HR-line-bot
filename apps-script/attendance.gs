@@ -144,6 +144,12 @@ function findLast_(punches, event) {
 }
 
 /**
+ * How long a check-out may follow its check-in and still be that shift's check-out. Longer
+ * is a different shift: the pairing in `openDaysByEmployee_` must not guess one.
+ */
+var MAX_SHIFT_HOURS = 24;
+
+/**
  * Every check-in from BEFORE today that was never closed, keyed by employee id.
  *
  * This is the case the same-day checks cannot see: `todaysPunches_` only looks at today, so
@@ -182,13 +188,24 @@ function openDaysByEmployee_(tz) {
     if (!byEmp.hasOwnProperty(empId)) continue;
     var seq = byEmp[empId].sort(function (a, b) { return a.ts - b.ts; });
 
-    // Walk it: an `in` opens a day, a real `out` closes every open one before it. Whatever
-    // is still open at the end is dangling. (Counting ins vs outs instead would flag a
-    // legacy day that had two pairs — true, but not something anyone can act on today.)
+    // Walk it: an `in` opens a shift, an `out` closes the shifts it can actually belong to —
+    // those starting within MAX_SHIFT_HOURS of it. Whatever is still open at the end is
+    // dangling. (Counting ins vs outs instead would flag a legacy day that had two pairs —
+    // true, but not something anyone can act on today.)
+    //
+    // ⚠️ The window is not decoration. Closing EVERY open `in` on any `out` made a forgotten
+    //    day disappear as soon as the employee worked normally afterwards (in Fri, in Mon,
+    //    out Mon → Mon's out "closed" Friday): no warning, no report, no row, no hours, and
+    //    B3 went quiet. A check-out 77 hours after a check-in is a different shift, not its
+    //    pair — and an overnight shift (in 22:00, out 02:00) is still well inside the window.
     var open = [];
+    var windowMs = MAX_SHIFT_HOURS * 3600 * 1000;
     for (var j = 0; j < seq.length; j++) {
-      if (seq[j].event === 'in') open.push(seq[j]);
-      else if (seq[j].event === 'out') open = [];
+      if (seq[j].event === 'in') { open.push(seq[j]); continue; }
+      if (seq[j].event !== 'out') continue;
+      while (open.length && (seq[j].ts.getTime() - open[open.length - 1].ts.getTime()) <= windowMs) {
+        open.pop();
+      }
     }
     if (open.length) out[empId] = open;
   }
