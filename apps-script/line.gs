@@ -17,19 +17,37 @@ function authHeaders_() {
   };
 }
 
-/** Free. The replyToken comes from the event and expires in 1 minute. */
-function reply_(replyToken, text) {
+/**
+ * Free. The replyToken comes from the event and expires in 1 minute.
+ * `content` is plain text, or an array of LINE message objects (e.g. a buttons template).
+ */
+function reply_(replyToken, content) {
   if (!replyToken) throw new Error('reply_ called without a replyToken');
+  var messages = (typeof content === 'string') ? [{ type: 'text', text: content }] : content;
   var res = UrlFetchApp.fetch(LINE_API + '/message/reply', {
     method: 'post',
     headers: authHeaders_(),
-    payload: JSON.stringify({ replyToken: replyToken, messages: [{ type: 'text', text: text }] }),
+    payload: JSON.stringify({ replyToken: replyToken, messages: messages }),
     muteHttpExceptions: true,
     timeout: LINE_TIMEOUT_MS
   });
   var code = res.getResponseCode();
   if (code !== 200) throw new Error('reply failed ' + code + ': ' + res.getContentText());
   return true;
+}
+
+/**
+ * A one-button message that opens a URL. The button is the point: a bare URL in a chat
+ * bubble is a blue string people hesitate to tap. `altText` is what notifications and old
+ * clients show, so it carries the full sentence including the URL.
+ */
+function linkButton_(text, label, url, altText) {
+  return [{
+    type: 'template',
+    altText: altText,
+    template: { type: 'buttons', text: text,
+                actions: [{ type: 'uri', label: label, uri: url }] }
+  }];
 }
 
 /** Costs one message from the monthly quota. Fallback for an expired reply token. */

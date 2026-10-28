@@ -12,8 +12,20 @@
  * inside a loop.
  */
 
-/** The HR spreadsheet. */
-function book_() { return SpreadsheetApp.openById(sheetId_()); }
+/**
+ * The HR spreadsheet, opened once per execution. A punch touches the sheet through
+ * getTab_ ten-plus times (config, roster, ledger reads, appends, log rows), and every bare
+ * openById is a round-trip to Sheets — on the path where an employee is waiting.
+ * Globals live for one execution only, so this can never serve a stale handle.
+ */
+var BOOK_ = null;
+function book_() {
+  if (!BOOK_) BOOK_ = SpreadsheetApp.openById(sheetId_());
+  return BOOK_;
+}
+
+/** Rows added at a time when a block reaches the bottom of the grid. */
+var GROW_ROWS = 500;
 
 function getTab_(name) {
   var sh = book_().getSheetByName(name);
@@ -71,8 +83,23 @@ function appendToBlock_(blockKey, row) {
   var b = BLOCKS[blockKey];
   var sh = getTab_(b.tab);
   var target = firstFreeRowInBlock_(sh, b);
+  ensureRows_(sh, target);
   sh.getRange(target, b.col + 1, 1, b.width).setValues([padRow_(row, b.width)]);
   return target;
+}
+
+/**
+ * Grow the grid before writing past its last row.
+ *
+ * ⚠️ getRange() THROWS for a row beyond the sheet's grid ("coordinates of the range are
+ *    outside the dimensions of the sheet") — it does not extend the sheet the way typing
+ *    into the UI does. DATA ships with 1000 rows and the LOG block gains ~4 rows per employee
+ *    per day, so without this every punch starts failing within weeks of real use, and the
+ *    error block (also in DATA) cannot record why.
+ */
+function ensureRows_(sh, row) {
+  var max = sh.getMaxRows();
+  if (row > max) sh.insertRowsAfter(max, Math.max(GROW_ROWS, row - max));
 }
 
 /**

@@ -121,7 +121,9 @@ function todayStatus_(employee, cfg) {
   var status = lateMin > 0 ? fill_(MSG.STATUS_LATE, { late: lateMin }) : MSG.STATUS_ON_TIME;
 
   if (openIn && (!lastOut || lastOut.ts < openIn.ts)) {
-    return fill_(MSG.TODAY_IN, { in: hhmm_(firstIn.ts, tz), status: status });
+    var sofar = minutesBetween_(firstIn.ts, new Date());
+    return fill_(MSG.TODAY_IN, { in: hhmm_(firstIn.ts, tz), status: status,
+                                 hours: Math.floor(sofar / 60), mins: sofar % 60 });
   }
 
   var worked = minutesBetween_(openIn.ts, lastOut.ts);
@@ -131,6 +133,33 @@ function todayStatus_(employee, cfg) {
     hours: Math.floor(worked / 60),
     mins: worked % 60
   });
+}
+
+/**
+ * Today as structure, for the LIFF page: which punch exists, so the page can enable only
+ * the button that makes sense (a disabled เข้างาน after checking in beats a refusal message).
+ * The server still enforces every rule — this only shapes the UI. Read-only.
+ *
+ * @returns {{in:?string, out:?string, lateMin:number, earlyMin:number, workedMin:?number}}
+ */
+function todayState_(employee, cfg) {
+  var tz = cfg.TZ;
+  var punches = todaysPunches_(employee.values[COLS.EMPLOYEES.ID], tz);
+  var firstIn = null;
+  for (var i = 0; i < punches.length; i++) {
+    if (punches[i].event === 'in') { firstIn = punches[i]; break; }
+  }
+  var lastOut = findLast_(punches, 'out');
+  var s = { in: null, out: null, lateMin: 0, earlyMin: 0, workedMin: null };
+  if (!firstIn) return s;
+  s.in = hhmm_(firstIn.ts, tz);
+  s.lateMin = lateMinutes_(firstIn.ts, cfg);
+  if (lastOut && lastOut.ts >= firstIn.ts) {
+    s.out = hhmm_(lastOut.ts, tz);
+    s.earlyMin = earlyMinutes_(lastOut.ts, cfg);
+    s.workedMin = minutesBetween_(firstIn.ts, lastOut.ts);
+  }
+  return s;
 }
 
 /* ---- helpers ---- */

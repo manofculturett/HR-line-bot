@@ -4,15 +4,87 @@ Version markers follow the tags on `main`. The system is live, so "deployed" is 
 separately from "committed" — a tag whose code was never pushed with `clasp deploy` is not
 running.
 
+## v2.4.0 — 2026-10-28
+
+Visual and functional pass across all three surfaces — the HR sheet, the LIFF page and the
+chat — plus one latent production failure.
+
+**Deployed:** not yet. The Apps Script code is pushed to HEAD (verified by pulling it back);
+the live `/exec` still serves @20. To put it live: `clasp create-deployment -i
+AKfycbzfyow… -d "v2.4.0"`, then `GET /exec?k=…` must report `"v2.4.0"`. The LIFF page goes
+live on `git push` (GitHub Pages) and works against either server version. The sheet changes
+are **already live** (applied by `scripts/setup_dashboard.py` + `scripts/style_sheet.py`).
+
+### Fixed
+
+- **`DATA` would stop accepting punches at grid row 1000.** `getRange()` throws past the
+  sheet's grid instead of extending it, and the LOG block gains ~4 rows per employee per day —
+  about two weeks of a 20-person team. `appendToBlock_` now grows the grid 500 rows at a time
+  first (`ensureRows_`).
+- **Status colours stopped at `HR_MAIN!F24`** while the formulas run to `F204`, so the 21st
+  employee got no colour. Every conditional rule now covers the provisioned range.
+- **The LIFF page sent people in a circle.** On a GPS or network failure it said "use the
+  เข้างาน button in the chat menu instead" — which `PUNCH_REQUIRE_GEO=TRUE` refuses. A failed
+  fix still punches (`no_fix`), so the page now says what was recorded; a network failure
+  says retry is safe (the server refuses a second punch).
+- `HR_MAIN!B2` went blank before the first punch of the day; it now says
+  `ยังไม่มีการลงเวลาวันนี้` (a blank derived cell reads as a broken formula).
+- The 09:15 digest used an English `d MMM yyyy` date in an otherwise Thai email.
+
+### Changed
+
+- **Google Sheet restyled** (`scripts/style_sheet.py`, idempotent, formatting only — no column
+  moves): Sarabun throughout, coloured header bars per tab and per `DATA` block, zebra rows,
+  status chips, column widths, hidden gridlines on `HR_MAIN`, tab colours, a leaver row greys
+  out in `EMPLOYEES_LOG`, `DATA` flags claims (`auto_close` / `self_report` / `hr_fix`) and geo
+  verdicts by colour, and warning-only protection on the formula area and on `DATA`.
+- **`HR_MAIN` additions:** a today panel (`F1:G3`: Thai date, checked-in `n / total`, late
+  count), an hours column (`H`, first in → last out), and a Thai description beside every
+  CONFIG key (`V`, which nothing reads).
+- **LIFF page redesigned:** live clock and Thai date, the employee's roster name, in/out
+  tiles with status chips, and only the punch that makes sense is enabled (เข้างาน greys out
+  with its time once used; เลิกงาน becomes the primary). The forgotten-day card defaults to
+  `WORK_END` instead of a hard-coded 18:00.
+- **One round-trip to open the page.** `me:today` now also returns `name`, `state`, `days`
+  and `workEnd`; the page used to make two requests. Older pages ignore the extra fields.
+- **Verified ID tokens are cached** (by SHA-256, until 60 s before `exp`, max 30 min), so the
+  2–3 requests of one page visit cost one call to LINE instead of one each.
+- **The spreadsheet is opened once per execution** (`book_` memoized) instead of on every
+  `getTab_` — a punch made ten-plus `openById` calls.
+- A chat punch refused by `PUNCH_REQUIRE_GEO` now gets a one-button card
+  (`เปิดหน้าลงเวลา`) instead of a bare URL; the old sentence is its `altText`.
+- `สถานะของฉัน` shows time worked so far while checked in.
+- **09:15 digest** rewritten in the same formal register as the 05:00 report: Buddhist-era
+  date, `เข้างานแล้ว n จาก m คน`, numbered missing list, and a new late list. Copy in
+  `messages.gs` (`HR_DIGEST`).
+
+### Added
+
+- `scripts/harness.js` + `scripts/fixtures/seed.json` — the Node harness that runs the real
+  `.gs` files against a stubbed runtime, now in the repo with an anonymized frozen fixture
+  (56 assertions; previously it lived outside the repo).
+- `scripts/style_sheet.py`.
+
+### Notes
+
+- Backup of the spreadsheet before the restyle: Drive file
+  `Customer — backup before restyle 2026-10-28`.
+- Verified: harness 56/56 (14 new: grid growth, single open, token cache incl. no-exp /
+  near-expiry / rejected / cross-token, the `today` payload through a full in→out day, the
+  button card's LINE limits, text routing, digest content and its bad-`WORK_START` path);
+  LIFF page exercised in a 390 px browser against new-server, old-server, unregistered and
+  GPS-denied responses; sheet re-run twice with identical rule/band/protection counts and no
+  formula errors.
+
 ## v2.3.0 — 2026-10-27
 
 A forgotten check-out stops hanging. It is still never *guessed* — the fallback uses the shift
 end the company itself declared, marks the row so nobody can read it as a punch, and is replaced
 the moment a person confirms the real time.
 
-**Deployed:** not yet. `clasp push` + redeploy the same deployment id, and add
-`AUTO_CLOSE_DAYS = 3` at `HR_MAIN!T21:U21` (the CONFIG block is now read as `T4:U28`; it was
-full at `U20`).
+**Deployed:** version 20 (labelled `v2.3.0 self-heal auto-close + professional HR email` in
+`clasp list-deployments`) → the same deployment id, URL unchanged. `AUTO_CLOSE_DAYS = 3` is live
+at `HR_MAIN!T21:U21` (the CONFIG block is now read as `T4:U28`; it was full at `U20`).
 
 ### Added
 

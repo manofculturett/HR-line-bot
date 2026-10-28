@@ -205,12 +205,13 @@ stores their `line_user_id` and clears the code (single use). The reply is ident
 
 ### The HR console — Google Sheets
 
-`HR_MAIN` A:G is a live view of today: one row per active employee with in/out times, a
-left-early flag, plus three summary cells — who has not checked in (`B1`), the latest
-punch (`B2`), and who never checked out on an earlier day (`B3`). Originally: a
-`ตรงเวลา / สาย / ยังไม่เข้างาน` status, colour-coded. `B1` is the missing-staff list; `B2` is
-last activity. All formulas — no script writer and **no trigger**; the sheet recalculates on
-every punch write and on open. The 09:15 digest email goes to `HR_EMAIL`, gated by
+`HR_MAIN` A:H is a live view of today: one row per active employee with in/out times, a
+`ตรงเวลา / สาย / ยังไม่เข้างาน` status chip, a left-early flag and hours worked, plus a summary
+panel — who has not checked in (`B1`), the latest punch (`B2`), who never checked out on an
+earlier day (`B3`) — and a today panel (`F1:G3`: date, checked-in `n / total`, late count).
+All formulas — no script writer and **no trigger**; the sheet recalculates on
+every punch write and on open. The look (fonts, colours, chips, widths) is applied by
+`scripts/style_sheet.py`. The 09:15 digest email goes to `HR_EMAIL`, gated by
 `EMAIL_ENABLED` and `WORK_DAYS` (no weekend "everyone is missing" email).
 
 ---
@@ -276,10 +277,13 @@ HR-line-bot/
 │   └── dashboard.md       # the HR_MAIN formulas + conditional formatting + gotchas
 ├── docs/liff/             # the LIFF check-in page — its URL is the LIFF Endpoint URL
 │   └── index.html
-├── scripts/               # local tooling (run with uv, see below)
+├── scripts/               # local tooling (run with uv / node, see below)
 │   ├── make_richmenu.py   # generate the LINE rich-menu PNGs
 │   ├── setup_dashboard.py # (re)apply the HR_MAIN formulas for N employees
-│   └── audit_sheet.py     # verify the live sheet against this README
+│   ├── style_sheet.py     # (re)apply the sheet's look — formatting only, idempotent
+│   ├── audit_sheet.py     # verify the live sheet against this README
+│   ├── harness.js         # run the real .gs files against a stubbed Apps Script runtime
+│   └── fixtures/seed.json # frozen, anonymized sheet snapshot the harness runs on
 └── assets/                # generated rich-menu images
 ```
 
@@ -316,13 +320,15 @@ lives in one place.
 
 ### Push and deploy
 ```bash
+node ../scripts/harness.js                                   # server logic first — exit 0
 cd apps-script
-clasp push                        # upload the .gs files
-clasp deploy --description "..."   # publish a new version to the web app URL
-clasp deployments                  # list deployments
+clasp push                                                   # upload the .gs files → HEAD only
+clasp create-deployment -i AKfycbzfyow… -d "vX.Y.Z what"     # publish behind the SAME /exec URL
+clasp list-deployments                                       # @N must move
 ```
 > **Deploy trap:** the `/exec` URL is bound to a **deployment**. After `clasp push` you must
-> `clasp deploy` (or redeploy the same id) or the webhook keeps hitting the old code.
+> redeploy the same id (`-i`) or the webhook keeps hitting the old code — and a deploy
+> *without* `-i` mints a new URL that neither the webhook nor the LIFF page points at.
 
 ### Secrets (Script Properties)
 Apps Script editor → Project Settings → Script Properties. Never in a cell, never in git:
@@ -364,9 +370,13 @@ token at `~/.hermes/google_token.json`; `uv` pulls the client libraries on deman
 ```bash
 uv run --with google-api-python-client --with google-auth-oauthlib python3 scripts/audit_sheet.py
 uv run --with google-api-python-client --with google-auth-oauthlib python3 scripts/setup_dashboard.py --rows 500
+uv run --with google-api-python-client --with google-auth-oauthlib python3 scripts/style_sheet.py
 uv run --with pillow python3 scripts/make_richmenu.py
+node scripts/harness.js          # server logic, before every clasp push — exit 0 = pass
 ```
 > On this machine `uv` lives at `~/.hermes/tools/uv-0.12.3-darwin-x64/uv`.
+> After `setup_dashboard.py --rows N`, re-run `style_sheet.py` (it sizes rules to row 204 —
+> change `DASH_LAST` with it).
 
 ---
 
@@ -487,19 +497,20 @@ would cost money is pushing, so the design avoids it.
 
 ## Status
 
-**v2.2.1 — live, in production use, and ฿0/month.** Deployment `AKfycbzfyow…@19`; the `/exec`
-URL is unchanged by design (`clasp deploy -i <deploymentId>` redeploys the same id — a plain
-`clasp deploy` would mint a new URL and leave the LIFF page and webhook pointing at the old
+**v2.3.0 — live, in production use, and ฿0/month.** Deployment `AKfycbzfyow…@20`; the `/exec`
+URL is unchanged by design (`clasp create-deployment -i <deploymentId>` redeploys the same id — a
+plain deploy would mint a new URL and leave the LIFF page and webhook pointing at the old
 code). The Apps Script Web App is deployed (the
 LINE webhook is bound to the live deployment) and the health endpoint answers. Registration,
 the punch flow and the LIFF location check all run end-to-end against the live `Customer`
 sheet; the HR dashboard is audited clean. No server to keep alive, nothing hosted except one
 static page — no downtime, no bill.
 
-**v2.3.0 is committed, not deployed.** To put it live: `clasp push`, redeploy the same
-deployment id, add the `AUTO_CLOSE_DAYS` row in `HR_MAIN!T21:U21` (the block is read as
-`T4:U28` now), and re-run `selfTest` — section [8] says whether the key was found in the block
-or the default is being used.
+**v2.4.0 is partly live.** The sheet restyle, hours column and today panel are applied to the
+live spreadsheet. The Apps Script code is pushed to HEAD but **not deployed** — run
+`clasp create-deployment -i AKfycbzfyow… -d "v2.4.0"` and confirm the health check reports
+`"v2.4.0"`. The redesigned LIFF page goes live on `git push` and works against either server
+version. See [CHANGELOG](CHANGELOG.md#v240--2026-10-28).
 
 **Verified 2026-10-23** against the live deployment and sheet:
 

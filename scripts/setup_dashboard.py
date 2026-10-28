@@ -32,6 +32,18 @@ STATUS = ('=IF($A{r}="","",IF($D{r}="","ยังไม่เข้างาน"
 EARLY = ('=IF($A{r}="","",IF($E{r}="","",'
          'IF(ROUND((TIMEVALUE(WORK_END)-TIMEVALUE($E{r}))*1440)>EARLY_GRACE_MIN,'
          '"ก่อน "&ROUND((TIMEVALUE(WORK_END)-TIMEVALUE($E{r}))*1440)&" น.","")))')
+# H — hours worked today (first in → last out), "8:35". MOD(…,1) keeps an overnight pair
+# (in 22:00, out 02:00) positive instead of a negative time that TEXT renders as garbage.
+HOURS = ('=IF(OR($D{r}="",$E{r}=""),"",'
+         'TEXT(MOD(TIMEVALUE($E{r})-TIMEVALUE($D{r}),1),"[h]:mm"))')
+
+# F1:G3 — today at a glance. Counted from the dashboard's own columns, so these numbers can
+# never disagree with the rows below them. "?*" counts non-empty text only: the D/F formulas
+# return "" for an empty row, which a plain COUNTA would count.
+THAI_TODAY = ('=DAY(TODAY())&" "&CHOOSE(MONTH(TODAY()),"ม.ค.","ก.พ.","มี.ค.","เม.ย.","พ.ค.",'
+              '"มิ.ย.","ก.ค.","ส.ค.","ก.ย.","ต.ค.","พ.ย.","ธ.ค.")&" "&(YEAR(TODAY())+543)')
+KPI_IN = '=COUNTIF($D$5:$D${last},"?*")&" / "&COUNTIF($A$5:$A${last},"?*")'
+KPI_LATE = '=COUNTIF($F$5:$F${last},"สาย")'
 # B3 — people whose shift is STILL OPEN from an earlier day (they forgot to check out).
 #
 # The test is "the last punch before today was an `in`", not "ins > outs". A count also
@@ -66,7 +78,7 @@ MISSING = ('=LET(nm,EMPLOYEES_LOG!$B$2:$B,act,EMPLOYEES_LOG!$G$2:$G,'
 # "last update" show a time that had not happened yet. NOW() makes a future row simply
 # not count until the clock catches up, so the cell can never claim a time ahead of now.
 LAST_ACTIVITY = ('=IFERROR(IF(MAXIFS(DATA!$A:$A,DATA!$A:$A,">="&TODAY(),DATA!$A:$A,'
-                '"<="&NOW())=0,"",TEXT(MAXIFS(DATA!$A:$A,DATA!$A:$A,">="&TODAY(),'
+                '"<="&NOW())=0,"ยังไม่มีการลงเวลาวันนี้",TEXT(MAXIFS(DATA!$A:$A,DATA!$A:$A,">="&TODAY(),'
                 'DATA!$A:$A,"<="&NOW()),"HH:mm:ss")),"")')
 
 
@@ -77,9 +89,12 @@ def main():
     args = ap.parse_args()
 
     last = FIRST + args.rows - 1
-    body = [{'range': 'HR_MAIN!B1', 'values': [[MISSING]]},
+    body = [{'range': 'HR_MAIN!A1:A3', 'values': [['ยังไม่เข้างาน'], ['อัปเดตล่าสุด'], ['ค้างเลิกงาน']]},
+            {'range': 'HR_MAIN!B1', 'values': [[MISSING]]},
             {'range': 'HR_MAIN!B2', 'values': [[LAST_ACTIVITY]]},
-            {'range': 'HR_MAIN!A3', 'values': [['ค้างเลิกงาน']]},
+            {'range': 'HR_MAIN!F1:G3', 'values': [['วันที่', THAI_TODAY],
+                                                   ['เข้างานแล้ว', KPI_IN.format(last=last)],
+                                                   ['มาสาย', KPI_LATE.format(last=last)]]},
             {'range': 'HR_MAIN!B3', 'values': [[STALE]]},
             {'range': 'HR_MAIN!A5',
              'values': [['=ARRAYFORMULA(FILTER(EMPLOYEES_LOG!$A$2:$A,EMPLOYEES_LOG!$G$2:$G=TRUE))']]},
@@ -90,9 +105,9 @@ def main():
             {'range': 'HR_MAIN!D%d:F%d' % (FIRST, last),
              'values': [[CHECKIN.format(r=r), CHECKOUT.format(r=r), STATUS.format(r=r)]
                         for r in range(FIRST, last + 1)]},
-            {'range': 'HR_MAIN!G4', 'values': [['ออกก่อน']]},
-            {'range': 'HR_MAIN!G%d:G%d' % (FIRST, last),
-             'values': [[EARLY.format(r=r)] for r in range(FIRST, last + 1)]}]
+            {'range': 'HR_MAIN!G4:H4', 'values': [['ออกก่อน', 'ชั่วโมง']]},
+            {'range': 'HR_MAIN!G%d:H%d' % (FIRST, last),
+             'values': [[EARLY.format(r=r), HOURS.format(r=r)] for r in range(FIRST, last + 1)]}]
 
     print('would write rows %d..%d (%d employee rows)' % (FIRST, last, args.rows))
     if args.dry_run:

@@ -86,7 +86,7 @@ function doGet(e) {
   return textOut_(JSON.stringify({
     ok: true,
     role: 'hr-line-bot',
-    version: 'v2.3.0',   // bump with the deploy — this is how a stale deployment is spotted
+    version: 'v2.4.0',   // bump with the deploy — this is how a stale deployment is spotted
     timezone: Session.getScriptTimeZone()
   }));
 }
@@ -220,18 +220,21 @@ function onMessage_(userId, message, replyToken) {
   var action = actionOf_(message.text);
   if (action) return runAction_(userId, action, replyToken);
 
+  // One roster read for the rest of this message (each lookup scans EMPLOYEES_LOG).
+  var me = employeeByLineId_(userId);
+
   // A brand-new employee may have no button for this — typing the word must also work.
-  if (!employeeByLineId_(userId) && isRegisterWord_(message.text)) {
+  if (!me && isRegisterWord_(message.text)) {
     return startRegistration_(userId, replyToken);
   }
 
   // An ALREADY-registered user who taps/types ลงทะเบียน: answer "already registered"
   // (matching the postback path) instead of the confusing "not understood".
-  if (isRegisterWord_(message.text) && employeeByLineId_(userId)) {
+  if (isRegisterWord_(message.text) && me) {
     return reply_(replyToken, MSG.REG_TAKEN);
   }
 
-  if (!usableEmployee_(employeeByLineId_(userId))) return reply_(replyToken, MSG.REG_NOT_LINKED);
+  if (!usableEmployee_(me)) return reply_(replyToken, MSG.REG_NOT_LINKED);
 
   // Log the raw text (Executions only, never the sheet) so an unrecognised button label is
   // one glance away from being diagnosed.
@@ -259,7 +262,8 @@ function runAction_(userId, action, replyToken) {
     var liffUrl = liffPunchUrl_();
     if (liffUrl) {
       logEvent_('', employee.values[COLS.EMPLOYEES.ID], 'refused:' + action, 'needs_liff');
-      return reply_(replyToken, fill_(MSG.PUNCH_NEEDS_LIFF, { url: liffUrl }));
+      return reply_(replyToken, linkButton_(MSG.PUNCH_NEEDS_LIFF_BTN_TEXT, MSG.PUNCH_NEEDS_LIFF_BTN,
+                                            liffUrl, fill_(MSG.PUNCH_NEEDS_LIFF, { url: liffUrl })));
     }
     // PUNCH_REQUIRE_GEO is on but LIFF_ID is unset: a configuration mistake must never lock
     // the team out of the clock. Fail open, and say so in the error block.

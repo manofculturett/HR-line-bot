@@ -52,41 +52,78 @@ function dailyDigest() {
   }
   if (!cfg.HR_EMAIL) { console.warn('HR_EMAIL not set; digest skipped'); return; }
 
-  var missing = missingToday_(cfg);
-  var subject = missing.length
-    ? 'ยังไม่เข้างาน ' + missing.length + ' คน — ' + todayLabel_(cfg.TZ)
-    : 'เข้างานครบทุกคน — ' + todayLabel_(cfg.TZ);
-
-  var body = missing.length
-    ? 'ยังไม่เข้างาน:\n- ' + missing.join('\n- ')
-    : 'พนักงานทุกคนเข้างานแล้ว ✅';
-
-  GmailApp.sendEmail(cfg.HR_EMAIL, subject, body);
+  var mail = buildDigestMail_(cfg, attendanceToday_(cfg));
+  GmailApp.sendEmail(cfg.HR_EMAIL, mail.subject, mail.body);
   console.log('Digest sent to ' + cfg.HR_EMAIL);
 }
 
-/** Employees marked active with no `in` punch today. */
-function missingToday_(cfg) {
+/**
+ * Active employees split by today's first check-in: who is missing, who came late.
+ * @returns {{missing:Array, late:Array, present:number, total:number}}
+ */
+function attendanceToday_(cfg) {
   var tz = cfg.TZ;
   var today = Utilities.formatDate(new Date(), tz, 'yyyy-MM-dd');
-  var present = {};
+  var firstIn = {};
   readBlock_('ATTENDANCE').forEach(function (r) {
     var v = r.values;
     var ts = v[COLS.ATTENDANCE.TS];
     if (!(ts instanceof Date)) return;
     if (Utilities.formatDate(ts, tz, 'yyyy-MM-dd') !== today) return;
     if (String(v[COLS.ATTENDANCE.EVENT]).trim() !== 'in') return;
-    present[String(v[COLS.ATTENDANCE.EMPLOYEE_ID]).trim()] = true;
+    var id = String(v[COLS.ATTENDANCE.EMPLOYEE_ID]).trim();
+    if (!firstIn[id] || ts < firstIn[id]) firstIn[id] = ts;
   });
 
-  var out = [];
+  var out = { missing: [], late: [], present: 0, total: 0 };
+  // lateMinutes_ throws on a bad WORK_START; the missing list must still reach HR then.
+  var canRateLate = parseHhMm_(cfg.WORK_START) !== null;
   readBlock_('EMPLOYEES').forEach(function (r) {
     var v = r.values;
     if (!isActive_(v)) return;
     var id = String(v[COLS.EMPLOYEES.ID]).trim();
-    if (!present[id]) out.push(String(v[COLS.EMPLOYEES.NAME]) + ' (' + id + ')');
+    var name = String(v[COLS.EMPLOYEES.NAME]);
+    out.total++;
+    if (!firstIn[id]) { out.missing.push({ id: id, name: name }); return; }
+    out.present++;
+    var late = canRateLate ? lateMinutes_(firstIn[id], cfg) : 0;
+    if (late > 0) out.late.push({ id: id, name: name, time: hhmm_(firstIn[id], tz), late: late });
   });
   return out;
+}
+
+/** The digest itself — wording in messages.gs (HR_DIGEST), layout here. */
+function buildDigestMail_(cfg, a) {
+  var tz = cfg.TZ;
+  var now = new Date();
+  var date = thaiDateLabel_(now, tz);
+  var out = [HR_MAIL.GREETING, '',
+             fill_(HR_DIGEST.INTRO, { date: date, time: hhmm_(now, tz), start: cfg.WORK_START }),
+             fill_(HR_DIGEST.COUNT, { present: a.present, total: a.total }), ''];
+
+  if (a.missing.length) {
+    out.push(fill_(HR_DIGEST.MISSING_HEAD, { n: a.missing.length }));
+    a.missing.forEach(function (m, i) {
+      out.push(HR_MAIL.ITEM_INDENT + fill_(HR_DIGEST.ITEM_MISSING, { n: i + 1, name: m.name, id: m.id }));
+    });
+    out.push('');
+  } else {
+    out.push(HR_DIGEST.ALL_IN, '');
+  }
+  if (a.late.length) {
+    out.push(fill_(HR_DIGEST.LATE_HEAD, { n: a.late.length }));
+    a.late.forEach(function (m, i) {
+      out.push(HR_MAIL.ITEM_INDENT + fill_(HR_DIGEST.ITEM_LATE,
+               { n: i + 1, name: m.name, id: m.id, time: m.time, late: m.late }));
+    });
+    out.push('');
+  }
+  out.push(HR_MAIL.FOOTER);
+
+  var subject = a.missing.length
+    ? fill_(HR_DIGEST.SUBJECT_MISSING, { date: date, n: a.missing.length })
+    : fill_(HR_DIGEST.SUBJECT_ALL_IN, { date: date });
+  return { subject: subject, body: out.join('\n') };
 }
 
 /**
@@ -247,8 +284,4 @@ function selfReportedRecently_(tz) {
                status: String(v[COLS.LOG.STATUS]).trim(), ts: ts });
   });
   return out;
-}
-
-function todayLabel_(tz) {
-  return Utilities.formatDate(new Date(), tz, 'd MMM yyyy');
 }

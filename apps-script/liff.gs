@@ -59,8 +59,17 @@ function handleLiffPunch_(payload) {
   // Read-only: the "today" view needs no location, writes no punch and no geo row. It is
   // here rather than as a separate endpoint because the page already has a verified
   // identity for this request — a second route would need a second auth path.
+  //
+  // It also carries everything the page needs to draw itself in ONE round-trip: the roster
+  // name, today's punches as structure (to enable the right button), the open-day list (the
+  // "ลืมลงเวลาเลิกงาน?" card) and WORK_END (the card's default time). An older page ignores
+  // the extra fields and keeps asking for 'open' separately, so both versions work.
   if (action === 'today') {
-    return { ok: true, action: 'today', text: todayStatus_(employee, cfg) };
+    var fl = fixList_(employee, cfg);
+    return { ok: true, action: 'today', text: todayStatus_(employee, cfg),
+             name: String(employee.values[COLS.EMPLOYEES.NAME] || ''),
+             state: todayState_(employee, cfg),
+             days: fl.days, workEnd: cfg.WORK_END };
   }
 
   // Listing or closing a forgotten day is not a punch: no location is requested and no geo
@@ -118,6 +127,12 @@ function liffPunchUrl_() {
  *
  * A missing LIFF_CHANNEL_ID is a configuration error, not an auth failure — it is logged
  * loudly so it cannot hide as "everyone is unauthorized".
+ *
+ * One page visit sends the same token 2–3 times (status, punch, refresh), and each verify is
+ * an HTTPS round-trip to LINE on the path where the employee is waiting. A token LINE has
+ * already accepted is remembered until shortly before its own `exp`, keyed by its SHA-256 —
+ * the token itself is never stored. A replayed token gets nothing it could not already get:
+ * LINE would accept it for exactly that window too.
  */
 function verifyLiffIdToken_(idToken) {
   var channelId = PropertiesService.getScriptProperties().getProperty('LIFF_CHANNEL_ID');
@@ -125,6 +140,11 @@ function verifyLiffIdToken_(idToken) {
     logError_('liff', 'Missing Script Property: LIFF_CHANNEL_ID');
     return null;
   }
+  var cacheKey = 'idt:' + sha256Hex_(idToken);
+  var cache = CacheService.getScriptCache();
+  var hit = cache.get(cacheKey);
+  if (hit) return hit;
+
   try {
     var res = UrlFetchApp.fetch('https://api.line.me/oauth2/v2.1/verify', {
       method: 'post',
@@ -138,11 +158,21 @@ function verifyLiffIdToken_(idToken) {
       return null;
     }
     var claims = JSON.parse(res.getContentText());
-    return claims.sub || null;
+    if (!claims.sub) return null;
+    // Remember it until 60 s before the token expires (never longer than 30 min).
+    var ttl = Math.min(1800, Math.floor((Number(claims.exp) * 1000 - Date.now()) / 1000) - 60);
+    if (ttl > 0) cache.put(cacheKey, claims.sub, ttl);
+    return claims.sub;
   } catch (err) {
     logError_('verifyLiffIdToken_', err);
     return null;
   }
+}
+
+function sha256Hex_(s) {
+  var bytes = Utilities.computeDigest(Utilities.DigestAlgorithm.SHA_256, String(s),
+                                      Utilities.Charset.UTF_8);
+  return bytes.map(function (b) { return ('0' + (b & 0xff).toString(16)).slice(-2); }).join('');
 }
 
 /**

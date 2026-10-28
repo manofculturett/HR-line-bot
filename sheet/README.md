@@ -30,18 +30,17 @@ match the three tabs already in the spreadsheet.
 ## `HR_MAIN`
 
 ```
-        A              B          C        D         E          F
-1   ยังไม่เข้างาน:   <formula>                                      ← the "is everyone in?" list
-2   อัปเดตล่าสุด     <formula>                                     ← latest punch time today
-3   ค้างเลิกงาน     <formula>                                     ← forgot to check out, earlier day
-3
-4   id            พนักงาน     แผนก     เข้างาน   เลิกงาน   สถานะ     ← header (frozen)
-5   A0123         สมชาย       ขาย      08:57     17:32     ตรงเวลา
-…   (formulas, rows 5–24)
+        A              B  (B:E merged)                F              G  (G:H merged)
+1   ยังไม่เข้างาน    <formula>  ← missing list       วันที่          28 ต.ค. 2569
+2   อัปเดตล่าสุด     <formula>  ← latest punch       เข้างานแล้ว     3 / 5
+3   ค้างเลิกงาน     <formula>  ← earlier open day    มาสาย          1
+4   id     พนักงาน     แผนก     เข้างาน   เลิกงาน   สถานะ     ออกก่อน    ชั่วโมง   ← header (frozen)
+5   A0123  สมชาย       ขาย      08:57     17:32     ตรงเวลา              8:35
+…   (formulas, rows 5–204)
 
-                                         T              U
-4                                        key            value
-5                                        TZ             Asia/Bangkok
+                                         T              U                V
+4                                        key            value            คำอธิบาย
+5                                        TZ             Asia/Bangkok     (what the key does, in Thai)
 6                                        WORK_START     09:00        ← named range
 7                                        LATE_GRACE_MIN  0           ← named range
 8                                        WORK_END       18:00
@@ -60,7 +59,13 @@ match the three tabs already in the spreadsheet.
 21                                       AUTO_CLOSE_DAYS 3            ← v2.3; close at WORK_END after 3 days, 0 = off
 ```
 
-- Dashboard rows 5–24 are **formulas only** — see [`dashboard.md`](dashboard.md).
+- Dashboard rows 5–204 are **formulas only** — see [`dashboard.md`](dashboard.md).
+- Column **H (`ชั่วโมง`)** is hours worked today, first in → last out (`8:35`).
+- **`V` describes each CONFIG key in Thai.** Nothing reads it; `scripts/style_sheet.py`
+  writes it by matching the key, so re-run that script after adding a key.
+- The look — Sarabun, header bars, chips, widths, warning-only protection on `A1:H204` and on
+  `DATA` — is applied by `scripts/style_sheet.py`. It is formatting only and idempotent; it
+  never moves a column (the DATA/CONFIG offsets in `config.gs` are load-bearing).
 - Column **G (`ออกก่อน`)** flags an early check-out, e.g. `ก่อน 119 น.`. It never blocks
   anything: leaving early is allowed and is only made visible to HR.
 - **`B3` lists anyone who never checked out on an earlier day.** It counts punches *before*

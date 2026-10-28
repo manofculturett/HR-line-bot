@@ -149,19 +149,36 @@ returns `out` (nothing outstanding — correct), and with the boundary at 2026-1
 
 ## Conditional formatting
 
-Applied to **F5:F24** (status):
+Owned by `scripts/style_sheet.py` (it deletes and recreates every rule, so edit the script,
+not the sheet). Before v2.4.0 the status rules covered only `F5:F24` while the formulas ran
+to `F204`, so the 21st employee got no colour.
+
+Applied to **F5:F204** (status):
 
 | Rule | Format |
 |---|---|
-| Text is exactly `ยังไม่เข้างาน` | red background |
-| Text contains `สาย` | amber background |
-| Text is exactly `ตรงเวลา` | green background |
+| Text is exactly `ยังไม่เข้างาน` | red chip |
+| Text is exactly `สาย` | amber chip |
+| Text is exactly `ตรงเวลา` | green chip |
 
-Applied to **G5:G204** (left early):
+Applied to **G5:G204** (left early): not empty → amber.
 
-| Rule | Format |
-|---|---|
-| Cell is not empty | amber background |
+Applied to **B1** / **B3**: the all-clear text (`เข้างานครบทุกคน ✅` / `ไม่มีรายการค้าง ✅`) →
+green; anything else → amber (B1) / red (B3).
+
+## The today panel and the hours column (v2.4.0)
+
+```
+F1 วันที่        G1 =DAY(TODAY())&" "&CHOOSE(MONTH(TODAY()),"ม.ค.",…,"ธ.ค.")&" "&(YEAR(TODAY())+543)
+F2 เข้างานแล้ว   G2 =COUNTIF($D$5:$D$204,"?*")&" / "&COUNTIF($A$5:$A$204,"?*")
+F3 มาสาย        G3 =COUNTIF($F$5:$F$204,"สาย")
+H5 (to H204)       =IF(OR($D5="",$E5=""),"",TEXT(MOD(TIMEVALUE($E5)-TIMEVALUE($D5),1),"[h]:mm"))
+```
+
+The counts read the dashboard's own columns, so they can never disagree with the rows below.
+`"?*"` counts non-empty text only — the D/F formulas return `""` for an empty row, which
+`COUNTA` would count. `MOD(…,1)` keeps an overnight pair positive. `B2` now reads
+`ยังไม่มีการลงเวลาวันนี้` instead of going blank before the first punch.
 
 ## Provisioning: how many employees?
 

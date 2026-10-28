@@ -64,6 +64,10 @@ var MSG = {
   PUNCH_NEEDS_LIFF:
     'การลงเวลาต้องยืนยันตำแหน่ง 📍\n' +
     'กรุณาเปิดหน้านี้แล้วกดปุ่มลงเวลา:\n{url}',
+  // The same refusal as a one-button card (buttons template: text ≤ 160 chars, label ≤ 20).
+  // PUNCH_NEEDS_LIFF above stays as its altText — what notifications and old clients show.
+  PUNCH_NEEDS_LIFF_BTN_TEXT: 'การลงเวลาต้องยืนยันตำแหน่ง 📍\nกดปุ่มด้านล่างเพื่อเปิดหน้าลงเวลา',
+  PUNCH_NEEDS_LIFF_BTN:      'เปิดหน้าลงเวลา',
 
   // --- location check (LIFF punches). Say "verified" only when geoCheck_ passed. ---
   GEO_OK_SUFFIX:      '\n📍 ยืนยันตำแหน่งแล้ว (ห่างออฟฟิศ {dist} ม.)',
@@ -77,7 +81,7 @@ var MSG = {
 
   // --- status ---
   TODAY_NONE:      'วันนี้ยังไม่มีการเข้างาน',
-  TODAY_IN:        'วันนี้\nเข้างาน {in}\nสถานะ: {status}',
+  TODAY_IN:        'วันนี้\nเข้างาน {in}\nสถานะ: {status}\nทำงานมาแล้ว {hours} ชม. {mins} นาที',
   TODAY_DONE:      'วันนี้\nเข้างาน {in}\nเลิกงาน {out}\nรวม {hours} ชม. {mins} นาที',
 
   // --- misc ---
@@ -130,6 +134,22 @@ var HR_MAIL = {
   ITEM_SELF: '{n}. {id} — เลิกงานวันที่ {out_date} เวลา {out_time} น. (แจ้งเมื่อ {reported})',
   ITEM_SELF_RAW: '{n}. {id} — {status} (แจ้งเมื่อ {reported})',
   ITEM_INDENT: '   '
+};
+
+/**
+ * The 09:15 digest (`dailyDigest`). Same register and date style as HR_MAIL, so the two
+ * emails HR receives read as one system rather than one formal letter and one log line.
+ */
+var HR_DIGEST = {
+  SUBJECT_MISSING: '[ระบบลงเวลาทำงาน] สรุปการเข้างาน {date} — ยังไม่เข้างาน {n} คน',
+  SUBJECT_ALL_IN:  '[ระบบลงเวลาทำงาน] สรุปการเข้างาน {date} — เข้างานครบทุกคน',
+  INTRO:   'สรุปการเข้างานประจำวันที่ {date} ณ เวลา {time} น. (เวลาเข้างาน {start} น.)',
+  COUNT:   'เข้างานแล้ว {present} จาก {total} คน',
+  MISSING_HEAD: 'ยังไม่เข้างาน ({n} คน)',
+  LATE_HEAD:    'เข้างานสาย ({n} คน)',
+  ALL_IN:  'พนักงานทุกคนเข้างานแล้ว ✅',
+  ITEM_MISSING: '{n}. {name} ({id})',
+  ITEM_LATE:    '{n}. {name} ({id}) — เข้างาน {time} น. สาย {late} นาที'
 };
 
 /**

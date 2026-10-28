@@ -3,7 +3,10 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<meta name="theme-color" content="#06C755">
 <title>ลงเวลางาน</title>
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Sarabun:wght@400;600;700&display=swap" rel="stylesheet">
 <!--
   LIFF check-in page for HR-line-bot.
 
@@ -18,120 +21,189 @@
 
   Nothing secret belongs in this file. The webhook ?k= secret must never appear here; the
   request is authenticated by the LINE ID token, which the server verifies with LINE.
+
+  Server compatibility: from v2.4.0 the 'me:today' answer also carries `name`, `state`,
+  `days` and `workEnd`, so the page draws itself in one round-trip. Against an older server
+  those fields are absent and the page falls back to the plain status text, both buttons
+  enabled, and a separate 'open' request — so the page may be published before or after
+  the Apps Script deploy.
 -->
 <style>
   :root {
     --line: #06C755;
-    --line-dark: #05a847;
+    --line-dark: #04a145;
+    --line-deep: #03803a;
     --ink: #1f2328;
     --muted: #6b7280;
-    --bg: #f7f8fa;
+    --faint: #9ca3af;
+    --bg: #f3f5f7;
     --card: #fff;
-    --warn: #b45309;
-    --err: #b91c1c;
+    --ok-bg: #e7f8ee;   --ok: #067a3a;
+    --warn-bg: #fff6e0; --warn: #a15c00;
+    --err-bg: #fdecec;  --err: #b42318;
+    --chip: #eef1f4;
+    --radius: 18px;
   }
   * { box-sizing: border-box; -webkit-tap-highlight-color: transparent; }
   html, body { margin: 0; padding: 0; }
   body {
-    font-family: -apple-system, BlinkMacSystemFont, "Helvetica Neue", "Noto Sans Thai", sans-serif;
-    background: var(--bg);
-    color: var(--ink);
-    padding: 20px 16px calc(24px + env(safe-area-inset-bottom));
-    line-height: 1.5;
+    font-family: "Sarabun", -apple-system, BlinkMacSystemFont, "Helvetica Neue", "Noto Sans Thai", sans-serif;
+    background: var(--bg); color: var(--ink); line-height: 1.5;
+    padding-bottom: calc(24px + env(safe-area-inset-bottom));
   }
-  h1 { font-size: 20px; margin: 4px 0 2px; }
-  .sub { color: var(--muted); font-size: 13px; margin: 0 0 18px; }
+
+  /* ── hero ── */
+  .hero {
+    background: linear-gradient(160deg, var(--line) 0%, var(--line-deep) 100%);
+    color: #fff; padding: 22px 20px 64px; text-align: center;
+  }
+  .hero .title { font-size: 14px; font-weight: 600; opacity: .9; letter-spacing: .3px; }
+  .clock { font-size: 56px; font-weight: 700; line-height: 1.05; margin: 8px 0 2px;
+           font-variant-numeric: tabular-nums; letter-spacing: -1px; }
+  .clock small { font-size: 22px; font-weight: 600; opacity: .75; margin-left: 2px; }
+  .date { font-size: 14px; opacity: .92; }
+  .hello { margin-top: 10px; font-size: 15px; font-weight: 600; min-height: 22px; }
+
+  main { padding: 0 16px; margin-top: -44px; }
   .card {
-    background: var(--card); border-radius: 16px; padding: 18px 16px;
-    box-shadow: 0 1px 3px rgba(16,24,40,.08); margin-bottom: 14px;
+    background: var(--card); border-radius: var(--radius); padding: 16px;
+    box-shadow: 0 2px 10px rgba(16,24,40,.07); margin-bottom: 14px;
   }
-  button.act {
-    display: block; width: 100%; border: 0; border-radius: 14px;
-    background: var(--line); color: #fff; font-size: 17px; font-weight: 700;
-    padding: 18px 16px; margin-bottom: 12px; font-family: inherit;
-    transition: background .15s, opacity .15s;
-  }
-  button.act:last-of-type { margin-bottom: 0; }
-  button.act.out { background: #fff; color: var(--line-dark); box-shadow: inset 0 0 0 2px var(--line); }
-  button.act:active { background: var(--line-dark); }
-  button.act.out:active { background: #eefaf1; }
-  button.act:disabled { opacity: .45; }
-  .today-head {
-    display: flex; align-items: center; justify-content: space-between;
-    color: var(--muted); font-size: 13px; margin-bottom: 6px;
-  }
+
+  /* ── today tiles ── */
+  .card-head { display: flex; align-items: center; justify-content: space-between;
+               font-size: 13px; color: var(--muted); font-weight: 600; margin-bottom: 10px; }
+  .tiles { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; }
+  .tile { background: var(--chip); border-radius: 14px; padding: 12px; text-align: center; }
+  .tile .lbl { font-size: 12px; color: var(--muted); }
+  .tile .val { font-size: 28px; font-weight: 700; font-variant-numeric: tabular-nums; color: var(--faint); }
+  .tile.done { background: var(--ok-bg); }
+  .tile.done .val { color: var(--ok); }
+  .chips { display: flex; flex-wrap: wrap; gap: 6px; margin-top: 10px; justify-content: center; }
+  .chips:empty { display: none; }
+  .chip { font-size: 13px; font-weight: 600; padding: 4px 10px; border-radius: 999px;
+          background: var(--chip); color: var(--muted); }
+  .chip.ok { background: var(--ok-bg); color: var(--ok); }
+  .chip.warn { background: var(--warn-bg); color: var(--warn); }
+  #todayText { font-size: 14px; white-space: pre-wrap; color: var(--muted); margin-top: 8px; text-align: center; }
+  #todayText:empty { display: none; }
+
   button.ghost {
     border: 0; background: none; color: var(--line-dark); font-family: inherit;
-    font-size: 13px; font-weight: 600; padding: 6px 2px;
+    font-size: 13px; font-weight: 600; padding: 4px 2px;
   }
   button.ghost:disabled { opacity: .45; }
-  #today { font-size: 15px; white-space: pre-wrap; word-break: break-word; }
-  #status {
-    white-space: pre-wrap; word-break: break-word; font-size: 15px;
-    border-radius: 14px; padding: 14px 16px; background: #eef1f5; color: var(--ink);
-    display: none;
+
+  /* ── actions ── */
+  .actions { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; margin-bottom: 14px; }
+  button.act {
+    border: 0; border-radius: 16px; font-family: inherit; font-size: 18px; font-weight: 700;
+    padding: 20px 10px 16px; display: flex; flex-direction: column; align-items: center; gap: 2px;
+    background: var(--line); color: #fff; box-shadow: 0 4px 12px rgba(6,199,85,.28);
+    transition: transform .08s, background .15s, opacity .15s;
   }
-  #status.show { display: block; }
-  #status.ok    { background: #eafaf0; color: #065f28; }
-  #status.warn  { background: #fff8e8; color: var(--warn); }
-  #status.error { background: #fdecec; color: var(--err); }
-  .fix-head { color: var(--warn); font-size: 14px; font-weight: 700; margin-bottom: 8px; }
-  .fix-note { color: var(--muted); font-size: 13px; margin: 0 0 10px; }
-  .fix-row { display: flex; gap: 10px; margin-bottom: 12px; }
-  .fix-row label { flex: 1; font-size: 12px; color: var(--muted); display: block; }
+  button.act .ico { font-size: 26px; line-height: 1; min-height: 26px; }
+  button.act .sub { font-size: 12px; font-weight: 600; opacity: .85; min-height: 18px; }
+  button.act.out { background: #fff; color: var(--line-deep); box-shadow: inset 0 0 0 2px var(--line); }
+  /* once checked in, เลิกงาน is the next action — give it the primary look */
+  button.act.out.next { background: var(--line); color: #fff; box-shadow: 0 4px 12px rgba(6,199,85,.28); }
+  button.act:active { transform: scale(.98); }
+  /* done / not yet possible: clearly grey, not a faded green that still reads as "tap me" */
+  button.act:disabled { background: #e9ecef; color: #8b949e; box-shadow: none; transform: none; }
+  button.act:disabled .ico { filter: grayscale(1); opacity: .6; }
+  button.act.busy { opacity: .8; }
+  button.act.busy:disabled { background: var(--line); color: #fff; }
+  button.act.out.busy:disabled { background: #fff; color: var(--line-deep); box-shadow: inset 0 0 0 2px var(--line); }
+  button.act.out.next.busy:disabled { background: var(--line); color: #fff; box-shadow: none; }
+  button.act.busy:disabled .ico { filter: none; opacity: 1; }
+  .spinner {
+    display: inline-block; width: 22px; height: 22px; border-radius: 50%;
+    border: 3px solid rgba(255,255,255,.35); border-top-color: #fff; animation: spin .8s linear infinite;
+  }
+  button.act.out .spinner { border-color: rgba(6,199,85,.25); border-top-color: var(--line); }
+  @keyframes spin { to { transform: rotate(360deg); } }
+
+  /* ── result ── */
+  #status {
+    white-space: pre-wrap; word-break: break-word; font-size: 15px; font-weight: 500;
+    border-radius: 16px; padding: 14px 16px; margin-bottom: 14px; display: none;
+    background: var(--chip);
+  }
+  #status.show { display: block; animation: pop .2s ease-out; }
+  #status.ok    { background: var(--ok-bg); color: var(--ok); }
+  #status.warn  { background: var(--warn-bg); color: var(--warn); }
+  #status.error { background: var(--err-bg); color: var(--err); }
+  @keyframes pop { from { transform: translateY(4px); opacity: 0; } to { transform: none; opacity: 1; } }
+
+  /* ── forgotten check-out ── */
+  #fixCard { border-left: 4px solid #f5a524; }
+  .fix-head { color: var(--warn); font-size: 15px; font-weight: 700; margin-bottom: 4px; }
+  .fix-note { color: var(--muted); font-size: 13px; margin: 0 0 12px; }
+  /* stacked: the date option text ("27/10 (ปิดอัตโนมัติ 18:00) — เข้างาน 13:23") needs the full width */
+  .fix-row { display: grid; grid-template-columns: 1fr; gap: 10px; margin-bottom: 12px; }
+  .fix-row label { font-size: 12px; color: var(--muted); display: block; }
   select, input[type="time"] {
     width: 100%; font-family: inherit; font-size: 15px; color: var(--ink);
-    padding: 12px 10px; margin-top: 4px; border: 1px solid #d0d7de; border-radius: 10px;
+    padding: 12px 10px; margin-top: 4px; border: 1px solid #d0d7de; border-radius: 12px;
     background: #fff; -webkit-appearance: none; appearance: none;
   }
-  button.act.small { font-size: 15px; padding: 14px 16px; }
-  .notice { color: var(--muted); font-size: 12px; margin: 18px 4px 0; }
-  .spinner {
-    display: inline-block; width: 14px; height: 14px; margin-right: 8px;
-    border: 2px solid rgba(255,255,255,.4); border-top-color: #fff; border-radius: 50%;
-    animation: spin .8s linear infinite; vertical-align: -2px;
+  button.fix {
+    width: 100%; border: 0; border-radius: 14px; font-family: inherit; font-size: 15px; font-weight: 700;
+    padding: 14px; background: #fff; color: var(--warn); box-shadow: inset 0 0 0 2px #f5a524;
   }
-  @keyframes spin { to { transform: rotate(360deg); } }
-  code { background: #eef1f5; padding: 1px 5px; border-radius: 4px; font-size: 12px; }
+  button.fix:disabled { opacity: .45; }
+
+  .notice { color: var(--muted); font-size: 12px; margin: 6px 6px 0; text-align: center; }
 </style>
 </head>
 <body>
 
-<h1>ลงเวลางาน</h1>
-<p class="sub" id="greeting">กำลังเชื่อมต่อกับ LINE…</p>
+<header class="hero">
+  <div class="title">ลงเวลางาน</div>
+  <div class="clock" id="clock">--:--</div>
+  <div class="date" id="date"></div>
+  <div class="hello" id="greeting">กำลังเชื่อมต่อกับ LINE…</div>
+</header>
 
-<div class="card">
-  <button class="act" id="btnIn" disabled>เข้างาน</button>
-  <button class="act out" id="btnOut" disabled>เลิกงาน</button>
-</div>
+<main>
+  <section class="card">
+    <div class="card-head">
+      <span>วันนี้</span>
+      <button class="ghost" id="btnStatus" disabled>รีเฟรช</button>
+    </div>
+    <div class="tiles">
+      <div class="tile" id="tileIn"><div class="lbl">เข้างาน</div><div class="val" id="valIn">--:--</div></div>
+      <div class="tile" id="tileOut"><div class="lbl">เลิกงาน</div><div class="val" id="valOut">--:--</div></div>
+    </div>
+    <div class="chips" id="chips"></div>
+    <div id="todayText"></div>
+  </section>
 
-<div class="card">
-  <div class="today-head">
-    <span>สถานะวันนี้</span>
-    <button class="ghost" id="btnStatus" disabled>ตรวจสอบอีกครั้ง</button>
-  </div>
-  <div id="today">—</div>
-</div>
+  <section class="actions">
+    <button class="act" id="btnIn" disabled><span class="ico">☀️</span><span>เข้างาน</span><span class="sub"></span></button>
+    <button class="act out" id="btnOut" disabled><span class="ico">🌙</span><span>เลิกงาน</span><span class="sub"></span></button>
+  </section>
 
-<!-- Shown only when the server reports a day this employee never checked out of. Nothing
-     here is a punch: the time is self-reported and the server records it as
-     source 'self_report', so HR can see it was not scanned. -->
-<div class="card" id="fixCard" style="display:none">
-  <div class="fix-head">ลืมลงเวลาเลิกงาน?</div>
-  <p class="fix-note">ระบบไม่พบเวลาเลิกงานของวันด้านล่าง ถ้าจำเวลาได้ให้ระบุแล้วกดยืนยัน</p>
-  <div class="fix-row">
-    <label>วันที่<select id="fixDate"></select></label>
-    <label>เวลาเลิกงาน<input type="time" id="fixTime" value="18:00"></label>
-  </div>
-  <button class="act out small" id="btnFix">ยืนยันเวลาเลิกงาน</button>
-</div>
+  <div id="status" role="status" aria-live="polite"></div>
 
-<div id="status"></div>
+  <!-- Shown only when the server reports a day this employee never checked out of. Nothing
+       here is a punch: the time is self-reported and the server records it as
+       source 'self_report', so HR can see it was not scanned. -->
+  <section class="card" id="fixCard" style="display:none">
+    <div class="fix-head">ลืมลงเวลาเลิกงาน?</div>
+    <p class="fix-note">ระบบไม่พบเวลาเลิกงานของวันด้านล่าง ถ้าจำเวลาได้ให้ระบุแล้วกดยืนยัน — HR จะเห็นว่าเป็นเวลาที่แจ้งเอง</p>
+    <div class="fix-row">
+      <label>วันที่<select id="fixDate"></select></label>
+      <label>เวลาเลิกงาน<input type="time" id="fixTime" value="18:00"></label>
+    </div>
+    <button class="fix" id="btnFix" disabled>ยืนยันเวลาเลิกงาน</button>
+  </section>
 
-<p class="notice">
-  ระบบจะขอตำแหน่งของท่านเฉพาะตอนกดปุ่มลงเวลา เพื่อตรวจว่าอยู่ในพื้นที่ออฟฟิศ
-  ไม่มีการติดตามตำแหน่งต่อเนื่อง และเก็บพิกัดแบบหยาบ (ประมาณ 10 เมตร)
-</p>
+  <p class="notice">
+    ระบบขอตำแหน่งเฉพาะตอนกดลงเวลา เพื่อตรวจว่าอยู่ในพื้นที่ออฟฟิศ<br>
+    ไม่มีการติดตามต่อเนื่อง และเก็บพิกัดแบบหยาบ (ประมาณ 10 เมตร)
+  </p>
+</main>
 
 <script src="https://static.line-scdn.net/liff/edge/2/sdk.js"></script>
 <script>
@@ -142,80 +214,177 @@
   var LIFF_ID = '2012159701-NWz9NCHX';   // LIFF tab of the LINE Login channel
   var GAS_URL = 'https://script.google.com/macros/s/AKfycbzfyowKt5QLEpkKQC59TffLGTNRI0jDo9frdYEgBslAJe9-JEUw-PMhmuMfo0w1B2M9/exec';
 
-  // A fix worse than this is refused client-side so the server never gets a 2 km guess.
   var GEO_OPTS = { enableHighAccuracy: true, timeout: 20000, maximumAge: 0 };
   var POST_TIMEOUT_MS = 25000;
+  var TZ = 'Asia/Bangkok';
 
   // ── dom ────────────────────────────────────────────────────────────────────
-  var elGreeting = document.getElementById('greeting');
-  var elStatus   = document.getElementById('status');
-  var elToday    = document.getElementById('today');
-  var btnIn      = document.getElementById('btnIn');
-  var btnOut     = document.getElementById('btnOut');
-  var btnStatus  = document.getElementById('btnStatus');
-  var elFixCard  = document.getElementById('fixCard');
-  var elFixDate  = document.getElementById('fixDate');
-  var elFixTime  = document.getElementById('fixTime');
-  var btnFix     = document.getElementById('btnFix');
+  function $(id) { return document.getElementById(id); }
+  var elGreeting = $('greeting'), elStatus = $('status'), elTodayText = $('todayText');
+  var elClock = $('clock'), elDate = $('date'), elChips = $('chips');
+  var elValIn = $('valIn'), elValOut = $('valOut'), elTileIn = $('tileIn'), elTileOut = $('tileOut');
+  var btnIn = $('btnIn'), btnOut = $('btnOut'), btnStatus = $('btnStatus');
+  var elFixCard = $('fixCard'), elFixDate = $('fixDate'), elFixTime = $('fixTime'), btnFix = $('btnFix');
 
   var idToken = null;
   var busy = false;
+  var ready = false;         // LIFF initialised and identity obtained
+  var state = null;          // server's today state; null when the server is older / unknown
 
+  // ── clock ──────────────────────────────────────────────────────────────────
+  // Display only. Every timestamp that counts is taken by the server, never by the phone.
+  function tick() {
+    var now = new Date();
+    try {
+      var parts = new Intl.DateTimeFormat('en-GB', { timeZone: TZ, hour: '2-digit', minute: '2-digit',
+                                                      second: '2-digit', hour12: false }).format(now);
+      elClock.textContent = parts.slice(0, 5);
+      var sm = document.createElement('small');
+      sm.textContent = ':' + parts.slice(6, 8);
+      elClock.appendChild(sm);
+      elDate.textContent = now.toLocaleDateString('th-TH', {
+        timeZone: TZ, weekday: 'long', day: 'numeric', month: 'long', year: 'numeric' });
+    } catch (e) {
+      elClock.textContent = now.toTimeString().slice(0, 5);
+    }
+  }
+  tick();
+  setInterval(tick, 1000);
+
+  // ── ui state ───────────────────────────────────────────────────────────────
   function setStatus(text, kind) {
     elStatus.textContent = text;
     elStatus.className = 'show' + (kind ? ' ' + kind : '');
   }
+  function clearStatus() { elStatus.textContent = ''; elStatus.className = ''; }
 
-  function clearStatus() {
-    elStatus.textContent = '';
-    elStatus.className = '';
+  function setSub(btn, text) { btn.querySelector('.sub').textContent = text || ''; }
+
+  /** Enable only the punch that makes sense today. The server still enforces every rule. */
+  function applyButtons() {
+    var live = ready && !busy;
+    btnStatus.disabled = !live;
+    btnFix.disabled = !live;
+    btnOut.classList.toggle('next', !!state && !!state.in && !state.out);
+    if (!live) { btnIn.disabled = true; btnOut.disabled = true; return; }
+    if (!state) {                                   // older server: no structure, allow both
+      btnIn.disabled = false; btnOut.disabled = false;
+      setSub(btnIn, ''); setSub(btnOut, '');
+      return;
+    }
+    btnIn.disabled = !!state.in;
+    btnOut.disabled = !state.in || !!state.out;
+    setSub(btnIn, state.in ? 'เข้างานแล้ว ' + state.in : '');
+    setSub(btnOut, state.out ? 'เลิกงานแล้ว ' + state.out : (state.in ? '' : 'ยังไม่ได้เข้างาน'));
   }
 
+  function chip(text, kind) {
+    var c = document.createElement('span');
+    c.className = 'chip' + (kind ? ' ' + kind : '');
+    c.textContent = text;
+    elChips.appendChild(c);
+  }
+
+  function renderToday(res) {
+    elChips.innerHTML = '';
+    state = (res && res.state) || null;
+    if (res && res.name) elGreeting.textContent = 'สวัสดี คุณ' + res.name;
+
+    if (!state) {                                   // older server — show its sentence as-is
+      elValIn.textContent = '--:--'; elValOut.textContent = '--:--';
+      elTileIn.className = 'tile'; elTileOut.className = 'tile';
+      elTodayText.textContent = (res && res.text) ? res.text : 'อ่านสถานะไม่ได้';
+      applyButtons();
+      return;
+    }
+    elTodayText.textContent = '';
+    elValIn.textContent = state.in || '--:--';
+    elValOut.textContent = state.out || '--:--';
+    elTileIn.className = 'tile' + (state.in ? ' done' : '');
+    elTileOut.className = 'tile' + (state.out ? ' done' : '');
+
+    if (!state.in) chip('ยังไม่ได้เข้างาน');
+    else if (state.lateMin > 0) chip('สาย ' + state.lateMin + ' นาที', 'warn');
+    else chip('ตรงเวลา', 'ok');
+    if (state.earlyMin > 0) chip('ออกก่อน ' + state.earlyMin + ' นาที', 'warn');
+    if (state.workedMin != null) {
+      chip('รวม ' + Math.floor(state.workedMin / 60) + ' ชม. ' + (state.workedMin % 60) + ' นาที', 'ok');
+    }
+    applyButtons();
+  }
+
+  function renderFix(days, workEnd) {
+    if (!days || !days.length) { elFixCard.style.display = 'none'; return; }
+    elFixDate.innerHTML = '';
+    days.forEach(function (d) {
+      var opt = document.createElement('option');
+      opt.value = d.date;
+      opt.textContent = d.label + ' — เข้างาน ' + d.inHHmm;
+      elFixDate.appendChild(opt);
+    });
+    // Default the time to the company's own shift end rather than a hard-coded 18:00.
+    var m = /^(\d{1,2}):(\d{2})$/.exec(workEnd || '');
+    if (m) elFixTime.value = (m[1].length === 1 ? '0' + m[1] : m[1]) + ':' + m[2];
+    elFixCard.style.display = 'block';
+  }
+
+  function setBusy(on, btn) {
+    busy = on;
+    [btnIn, btnOut].forEach(function (b) {
+      b.classList.remove('busy');
+      var ico = b.querySelector('.ico');
+      if (ico.getAttribute('data-icon')) {
+        ico.textContent = ico.getAttribute('data-icon');
+        ico.removeAttribute('data-icon');
+      }
+    });
+    if (on && btn) {
+      btn.classList.add('busy');
+      var ico = btn.querySelector('.ico');
+      ico.setAttribute('data-icon', ico.textContent);
+      ico.innerHTML = '<span class="spinner"></span>';
+    }
+    applyButtons();
+  }
+
+  // ── reads ──────────────────────────────────────────────────────────────────
   /**
-   * Read today's summary. Read-only: the server writes nothing for action 'today', and a
-   * failure here must never interrupt a punch — so this never rejects into the punch flow.
+   * One request draws the whole page on a v2.4+ server. Read-only, and never allowed to
+   * interrupt a punch — a failure only changes the status text.
    */
-  function fetchStatus() {
-    if (configMissing() || !idToken) return;
-    elToday.textContent = 'กำลังอ่านสถานะ…';
+  function refresh() {
+    if (!idToken) return Promise.resolve();
+    if (!state) elTodayText.textContent = 'กำลังอ่านสถานะ…';
     // 'me:today' is the exact token the rich-menu status button sends, so the single
     // mapping in Code.gs ACTION_ALIASES serves both surfaces. Do not send a bare 'today'.
-    send({ idToken: idToken, action: 'me:today' })
+    return send({ idToken: idToken, action: 'me:today' })
       .then(function (res) {
-        elToday.textContent = (res && res.text) ? res.text : 'อ่านสถานะไม่ได้';
-      })
-      .catch(function () { elToday.textContent = 'อ่านสถานะไม่ได้'; });
-  }
-
-  /**
-   * Ask the server which days this employee never closed, and show the fix card only when
-   * there is one — a permanently visible "you forgot" panel trains people to ignore it.
-   * Read-only, and never allowed to interrupt a punch: failures are swallowed.
-   */
-  function fetchOpen() {
-    if (configMissing() || !idToken) return;
-    send({ idToken: idToken, action: 'open' })
-      .then(function (res) {
-        var days = (res && res.days) || [];
-        if (!days.length) {
-          elFixCard.style.display = 'none';
+        if (res && res.error === 'not_linked') {
+          ready = false;
+          applyButtons();
+          elGreeting.textContent = 'ยังไม่ได้ลงทะเบียน';
+          elTodayText.textContent = '';
+          setStatus(res.text || 'กรุณาลงทะเบียนในแชทก่อน', 'warn');
           return;
         }
-        elFixDate.innerHTML = '';
-        days.forEach(function (d) {
-          var opt = document.createElement('option');
-          opt.value = d.date;
-          opt.textContent = d.label + ' — เข้างาน ' + d.inHHmm;
-          elFixDate.appendChild(opt);
-        });
-        elFixCard.style.display = 'block';
+        renderToday(res);
+        if (res && res.days) renderFix(res.days, res.workEnd);
+        else fetchOpen();                            // older server
       })
+      .catch(function () { elTodayText.textContent = 'อ่านสถานะไม่ได้ — กด “รีเฟรช”'; });
+  }
+
+  /** Older servers only: the forgotten-day list as a separate request. */
+  function fetchOpen() {
+    send({ idToken: idToken, action: 'open' })
+      .then(function (res) { renderFix(res && res.days, res && res.workEnd); })
       .catch(function (err) { console.warn('open-day lookup failed:', err); });
   }
 
+  // ── writes ─────────────────────────────────────────────────────────────────
   /** Self-reported check-out. No location is requested: this is a claim about a past day. */
   function submitFix() {
-    if (busy || configMissing() || !idToken) return;
+    if (busy || !idToken) return;
     var date = elFixDate.value;
     var hhmm = elFixTime.value;
     if (!date || !/^\d{2}:\d{2}$/.test(hhmm)) {
@@ -223,46 +392,57 @@
       return;
     }
     clearStatus();
-    setBusy(true, 'กำลังบันทึกเวลา…');
+    setBusy(true, null);
+    btnFix.textContent = 'กำลังบันทึก…';
     send({ idToken: idToken, action: 'fix', date: date, hhmm: hhmm })
       .then(function (res) {
-        setBusy(false);
-        var text = (res && res.text) ? res.text : 'ไม่ได้รับคำตอบจากเซิร์ฟเวอร์';
-        setStatus(text, (res && res.error) ? 'error' : 'ok');
-        fetchOpen();
-        fetchStatus();
-        elGreeting.textContent = 'ท่านสามารถปิดหน้านี้ได้';
+        setStatus((res && res.text) || 'ไม่ได้รับคำตอบจากเซิร์ฟเวอร์', (res && res.error) ? 'error' : 'ok');
       })
-      .catch(function (err) {
+      .catch(function () { setStatus(networkMessage(), 'error'); })
+      .then(function () {
+        btnFix.textContent = 'ยืนยันเวลาเลิกงาน';
         setBusy(false);
-        setStatus(tooLongOrFailed(err).text, 'error');
+        return refresh();
       });
   }
 
-  function setBusy(state, label) {
-    busy = state;
-    btnIn.disabled = state;
-    btnOut.disabled = state;
-    btnStatus.disabled = state;
-    btnFix.disabled = state;
-    if (state && label) {
-      btnIn.textContent = 'เข้างาน';
-      btnOut.textContent = 'เลิกงาน';
-      elGreeting.innerHTML = '';
-      var sp = document.createElement('span');
-      sp.className = 'spinner';
-      elGreeting.appendChild(sp);
-      elGreeting.appendChild(document.createTextNode(label));
-    }
-  }
+  function punch(action) {
+    if (busy || !idToken) return;
+    clearStatus();
+    setBusy(true, action === 'in' ? btnIn : btnOut);
+    var geoNote = '';
 
-  function configMissing() {
-    return LIFF_ID.indexOf('PUT_') === 0 || GAS_URL.indexOf('PUT_') === 0;
+    currentPosition()
+      .catch(function (err) {
+        // A refused location must not block the punch: send it without coordinates and let
+        // the server record 'no_fix'. Attendance beats telemetry.
+        geoNote = geoErrorMessage(err);
+        return { lat: null, lng: null, acc: null };
+      })
+      .then(function (pos) {
+        return send({ idToken: idToken, action: action, lat: pos.lat, lng: pos.lng, acc: pos.acc });
+      })
+      .then(function (res) {
+        var text = (res && res.text) ? res.text : 'ไม่ได้รับคำตอบจากเซิร์ฟเวอร์';
+        var kind = 'ok';
+        if (res && (res.error || res.blocked)) kind = res.blocked ? 'warn' : 'error';
+        else if (text.indexOf('⚠️') !== -1 || geoNote) kind = 'warn';
+        setStatus(text + (geoNote ? '\n\n📍 ' + geoNote : ''), kind);
+        if (kind === 'ok' && navigator.vibrate) navigator.vibrate(30);
+      })
+      .catch(function () { setStatus(networkMessage(), 'error'); })
+      .then(function () {
+        setBusy(false);
+        return refresh();
+      });
   }
 
   // ── transport ──────────────────────────────────────────────────────────────
-  function tooLongOrFailed(err) {
-    return { ok: false, error: 'network', text: 'เชื่อมต่อเซิร์ฟเวอร์ไม่ได้: ' + (err && err.message || err) };
+  // A failed request is safe to retry: the server refuses a second check-in / check-out for
+  // the day, so a punch that did land the first time cannot be doubled.
+  function networkMessage() {
+    return 'เชื่อมต่อเซิร์ฟเวอร์ไม่ได้ กรุณาลองอีกครั้ง\n' +
+           '(ถ้ากดซ้ำแล้วระบบแจ้งว่าลงเวลาแล้ว แปลว่าครั้งแรกบันทึกสำเร็จ)';
   }
 
   /**
@@ -329,17 +509,10 @@
   // ── location ───────────────────────────────────────────────────────────────
   function currentPosition() {
     return new Promise(function (resolve, reject) {
-      if (!navigator.geolocation) {
-        reject({ code: -1, message: 'no geolocation' });
-        return;
-      }
+      if (!navigator.geolocation) { reject({ code: -1 }); return; }
       navigator.geolocation.getCurrentPosition(
         function (pos) {
-          resolve({
-            lat: pos.coords.latitude,
-            lng: pos.coords.longitude,
-            acc: pos.coords.accuracy
-          });
+          resolve({ lat: pos.coords.latitude, lng: pos.coords.longitude, acc: pos.coords.accuracy });
         },
         function (err) { reject(err); },
         GEO_OPTS
@@ -347,85 +520,39 @@
     });
   }
 
+  /**
+   * Shown AFTER the punch went through without a position — never as a reason to go
+   * elsewhere. The chat path refuses punches while PUNCH_REQUIRE_GEO is on, so pointing
+   * people at the chat menu (as this page used to) sent them in a circle.
+   */
   function geoErrorMessage(err) {
     // 1 = permission denied, 2 = position unavailable, 3 = timeout.
     if (err && err.code === 1) {
-      return 'ไม่ได้รับอนุญาตให้ใช้ตำแหน่ง\n\n' +
-             'เปิดการเข้าถึงตำแหน่งให้ LINE ก่อน:\n' +
-             'ตั้งค่า iPhone/Android → LINE → ตำแหน่ง → อนุญาต\n' +
-             'หรือลงเวลาด้วยปุ่ม “เข้างาน” ในเมนูแชท (ระบบจะบันทึกโดยไม่มีตำแหน่ง)';
+      return 'บันทึกโดยไม่มีตำแหน่ง: ไม่ได้อนุญาตให้ LINE ใช้ตำแหน่ง\n' +
+             'เปิดได้ที่ ตั้งค่าเครื่อง → LINE → ตำแหน่ง → อนุญาต';
     }
-    if (err && err.code === 3) {
-      return 'หาตำแหน่งไม่ทันเวลา (อาจอยู่ในอาคาร)\nลองอีกครั้งใกล้หน้าต่าง หรือลงเวลาด้วยปุ่มในเมนูแชท';
-    }
-    if (err && err.code === 2) {
-      return 'เครื่องระบุตำแหน่งไม่ได้ตอนนี้\nลองอีกครั้ง หรือลงเวลาด้วยปุ่มในเมนูแชท';
-    }
-    return 'เบราว์เซอร์นี้ไม่รองรับการระบุตำแหน่ง';
-  }
-
-  // ── flow ───────────────────────────────────────────────────────────────────
-  function punch(action) {
-    if (busy || configMissing() || !idToken) return;
-    clearStatus();
-    setBusy(true, 'กำลังขอตำแหน่ง…');
-
-    currentPosition()
-      .catch(function (err) {
-        // A refused location must not block the punch: send it without coordinates and let
-        // the server record 'no_fix'. Attendance beats telemetry — the same rule the plain
-        // menu button follows.
-        setStatus(geoErrorMessage(err), 'warn');
-        return { lat: null, lng: null, acc: null };
-      })
-      .then(function (pos) {
-        setBusy(true, 'กำลังบันทึกเวลา…');
-        return send({
-          idToken: idToken,
-          action: action,
-          lat: pos.lat,
-          lng: pos.lng,
-          acc: pos.acc
-        });
-      })
-      .then(function (res) {
-        setBusy(false);
-        var text = (res && res.text) ? res.text : 'ไม่ได้รับคำตอบจากเซิร์ฟเวอร์';
-        var kind = 'ok';
-        if (res && (res.error || res.blocked)) kind = res.blocked ? 'warn' : 'error';
-        else if (text.indexOf('⚠️') !== -1) kind = 'warn';
-        setStatus(text, kind);
-        fetchOpen();
-        fetchStatus();
-        elGreeting.textContent = 'ท่านสามารถปิดหน้านี้ได้';
-      })
-      .catch(function (err) {
-        setBusy(false);
-        var r = tooLongOrFailed(err);
-        setStatus(r.text + '\n\nกรุณาลงเวลาด้วยปุ่มในเมนูแชทแทน', 'error');
-      });
+    if (err && err.code === 3) return 'บันทึกโดยไม่มีตำแหน่ง: หาตำแหน่งไม่ทันเวลา (อาจอยู่ในอาคาร)';
+    if (err && err.code === 2) return 'บันทึกโดยไม่มีตำแหน่ง: เครื่องระบุตำแหน่งไม่ได้ในขณะนี้';
+    return 'บันทึกโดยไม่มีตำแหน่ง: อุปกรณ์นี้ไม่รองรับการระบุตำแหน่ง';
   }
 
   btnIn.addEventListener('click', function () { punch('in'); });
   btnOut.addEventListener('click', function () { punch('out'); });
-  btnStatus.addEventListener('click', fetchStatus);
+  btnStatus.addEventListener('click', function () { clearStatus(); refresh(); });
   btnFix.addEventListener('click', submitFix);
 
   // ── boot ───────────────────────────────────────────────────────────────────
   function fatal(text) {
-    setBusy(false);
-    // setBusy(false) re-enables everything, so all three must be shut again explicitly —
-    // an enabled button that silently does nothing is worse than a disabled one.
-    btnIn.disabled = true;
-    btnOut.disabled = true;
-    btnStatus.disabled = true;
-    btnFix.disabled = true;
-    elGreeting.textContent = 'ลงเวลางาน';
+    // Everything stays disabled: a button that silently does nothing is worse than a grey one.
+    ready = false;
+    busy = false;
+    applyButtons();
+    elGreeting.textContent = '';
     setStatus(text, 'error');
   }
 
   function boot() {
-    if (configMissing()) {
+    if (LIFF_ID.indexOf('PUT_') === 0 || GAS_URL.indexOf('PUT_') === 0) {
       fatal('หน้านี้ยังไม่ได้ตั้งค่า\nกรุณาใส่ LIFF_ID และ GAS_URL ในไฟล์ index.html');
       return;
     }
@@ -436,10 +563,7 @@
 
     liff.init({ liffId: LIFF_ID })
       .then(function () {
-        if (!liff.isLoggedIn()) {
-          liff.login();
-          return null;
-        }
+        if (!liff.isLoggedIn()) { liff.login(); return null; }
         idToken = liff.getIDToken();
         if (!idToken) {
           // The LIFF app must have the `openid` scope; without it there is no ID token and
@@ -447,19 +571,17 @@
           fatal('ไม่ได้รับสิทธิ์ยืนยันตัวตน (ต้องเปิด scope openid ใน LINE Login channel)');
           return null;
         }
-        // Display only — liff.getProfile() is client-side and never used as proof.
-        elGreeting.textContent = 'เลือกการลงเวลา';
-        btnIn.disabled = false;
-        btnOut.disabled = false;
-        btnStatus.disabled = false;
-        btnFix.disabled = false;
-        fetchStatus();
-        fetchOpen();
+        ready = true;
+        elGreeting.textContent = 'กำลังโหลดข้อมูลวันนี้…';
+        applyButtons();
+        return refresh().then(function () {
+          if (elGreeting.textContent === 'กำลังโหลดข้อมูลวันนี้…') elGreeting.textContent = 'เลือกการลงเวลา';
+        });
       })
       .catch(function (err) {
         console.error(err);
-        fatal('เปิด LIFF ไม่สำเร็จ: ' + (err && (err.message || err.code) || err) +
-              '\nกรุณาเปิดหน้านี้จากปุ่มในเมนูแชท LINE');
+        fatal('เปิดหน้าลงเวลาไม่สำเร็จ: ' + (err && (err.message || err.code) || err) +
+              '\nกรุณาปิดแล้วเปิดใหม่จากปุ่มในเมนูแชท LINE');
       });
   }
 
