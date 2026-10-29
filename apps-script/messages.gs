@@ -21,6 +21,10 @@ var MSG = {
   REG_TAKEN:       'บัญชี LINE นี้ผูกกับพนักงานแล้ว\nหากต้องการเปลี่ยน กรุณาติดต่อ HR',
   REG_RATE_LIMIT:  'ลองหลายครั้งเกินไป กรุณารอสักครู่แล้วลองใหม่',
   REG_NOT_LINKED:  'กรุณาลงทะเบียนก่อนใช้งาน\nพิมพ์คำว่า “ลงทะเบียน” ส่งมาในแชทได้เลย',
+  // HR set active=FALSE (a leaver). Saying "please register" here sends them into the
+  // registration flow, which answers "this account is already bound" — two wrong messages
+  // instead of the one they need, and it is the sentence a leaver screenshots.
+  ACCOUNT_INACTIVE:'บัญชีนี้ปิดการใช้งานแล้ว\nกรุณาติดต่อฝ่ายทรัพยากรบุคคล',
 
   // --- punch ---
   IN_OK:           'เข้างาน {time} ✅',

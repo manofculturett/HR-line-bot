@@ -86,7 +86,7 @@ function doGet(e) {
   return textOut_(JSON.stringify({
     ok: true,
     role: 'hr-line-bot',
-    version: 'v2.4.0',   // bump with the deploy — this is how a stale deployment is spotted
+    version: 'v2.4.1',   // bump with the deploy — this is how a stale deployment is spotted
     timezone: Session.getScriptTimeZone()
   }));
 }
@@ -121,7 +121,10 @@ function onFollow_(userId, replyToken) {
   var employee = employeeByLineId_(userId);
   if (employee) {
     attachMenu_(userId, 'RICHMENU_REGISTERED');
-    return reply_(replyToken, fill_(MSG.WELCOME_BACK, { name: employee.values[COLS.EMPLOYEES.NAME] }));
+    // A leaver who re-adds the OA must not be greeted with "tap เข้างาน to start".
+    return reply_(replyToken, isActive_(employee.values)
+      ? fill_(MSG.WELCOME_BACK, { name: employee.values[COLS.EMPLOYEES.NAME] })
+      : MSG.ACCOUNT_INACTIVE);
   }
   attachMenu_(userId, 'RICHMENU_UNREGISTERED');
   return reply_(replyToken, MSG.WELCOME);
@@ -234,7 +237,7 @@ function onMessage_(userId, message, replyToken) {
     return reply_(replyToken, MSG.REG_TAKEN);
   }
 
-  if (!usableEmployee_(me)) return reply_(replyToken, MSG.REG_NOT_LINKED);
+  if (!usableEmployee_(me)) return reply_(replyToken, refusalFor_(me));
 
   // Log the raw text (Executions only, never the sheet) so an unrecognised button label is
   // one glance away from being diagnosed.
@@ -249,11 +252,11 @@ function runAction_(userId, action, replyToken) {
   var employee = employeeByLineId_(userId);
 
   if (action === 'today') {
-    if (!usableEmployee_(employee)) return reply_(replyToken, MSG.REG_NOT_LINKED);
+    if (!usableEmployee_(employee)) return reply_(replyToken, refusalFor_(employee));
     return reply_(replyToken, todayStatus_(employee, cfg));
   }
 
-  if (!usableEmployee_(employee)) return reply_(replyToken, MSG.REG_NOT_LINKED);
+  if (!usableEmployee_(employee)) return reply_(replyToken, refusalFor_(employee));
 
   // A punch from the chat — a typed word or a postback button — carries no location, so it
   // is refused when HR requires the LIFF page. Without this guard the whole location check is
@@ -278,6 +281,15 @@ function runAction_(userId, action, replyToken) {
 /** Linked and still employed. */
 function usableEmployee_(employee) {
   return !!employee && isActive_(employee.values);
+}
+
+/**
+ * What to tell someone the bot will not serve — two different situations that used to share
+ * one sentence: never registered, and deactivated by HR (active=FALSE). A leaver told to
+ * "register" walks into a flow that then says their account is already bound.
+ */
+function refusalFor_(employee) {
+  return (employee && !isActive_(employee.values)) ? MSG.ACCOUNT_INACTIVE : MSG.REG_NOT_LINKED;
 }
 
 /* ---- helpers ---- */

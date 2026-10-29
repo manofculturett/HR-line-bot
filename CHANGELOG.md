@@ -4,6 +4,35 @@ Version markers follow the tags on `main`. The system is live, so "deployed" is 
 separately from "committed" — a tag whose code was never pushed with `clasp deploy` is not
 running.
 
+## v2.4.1 — 2026-10-29
+
+Found while auditing the employee side of the bot, not by any test: **a deactivated employee
+was told the wrong thing, twice.**
+
+**Deployed:** Apps Script version 22 on the same deployment id; the health check reports
+`"v2.4.1"`. The LIFF page change rides on `git push`.
+
+### Fixed
+
+- **`active=FALSE` (a leaver) was answered with `กรุณาลงทะเบียนก่อนใช้งาน` — "please
+  register".** Following that advice entered the registration flow, which then answered
+  `บัญชี LINE นี้ผูกกับพนักงานแล้ว` — "this account is already bound". Two wrong sentences, and
+  neither one says the account is closed. All ingresses now answer
+  `บัญชีนี้ปิดการใช้งานแล้ว กรุณาติดต่อฝ่ายทรัพยากรบุคคล`: typed text, postback, the status
+  action, the `follow` event (a leaver re-adding the OA used to be greeted with "tap เข้างาน
+  to start"), registration step 1, and the LIFF page (new `inactive` error code, distinct from
+  `not_linked`).
+- **The deactivated check now runs before the "already linked" check** in registration. A leaver
+  is usually still bound to their old account, so the binding answered first and the reason that
+  matters was never shown.
+
+### Notes
+
+- Nothing is written to the ledger for a deactivated employee — asserted, so a "closed" reply
+  can never be accompanied by a punch row.
+- 61 assertions (5 new), including that a stranger still gets the registration prompt and a live
+  employee still gets `ขออภัยค่ะ ระบบยังไม่เข้าใจข้อความนี้` for unrecognised text.
+
 ## v2.4.0 — 2026-10-28
 
 Visual and functional pass across all three surfaces — the HR sheet, the LIFF page and the

@@ -895,5 +895,61 @@ t('09:15 digest still reaches HR when WORK_START is unparseable (no late list)',
   ok(outbox[0].body.indexOf('เข้างานสาย') === -1, 'no late section');
 });
 
+// ══════════════════════════════ v2.4.1 ═══════════════════════════════════════════
+console.log('\n=== v2.4.1 ===\n');
+/** Mark the seeded employee a leaver (HR sets active=FALSE). */
+function deactivate() {
+  seed();
+  const r = G.employeeById_('A0124');
+  G.getTab_('EMPLOYEES_LOG').getRange(r.row, G.COLS.EMPLOYEES.ACTIVE + 1).setValue('FALSE');
+  G.BOOK_ = null;
+  return r;
+}
+
+t('a deactivated employee is told the account is closed, not "please register"', () => {
+  deactivate();
+  G.runAction_(LINE_UID(), 'in', 'r1');
+  eq(lastReply()[0].text, G.MSG.ACCOUNT_INACTIVE, 'punch');
+  G.runAction_(LINE_UID(), 'today', 'r2');
+  eq(lastReply()[0].text, G.MSG.ACCOUNT_INACTIVE, 'status');
+  G.onMessage_(LINE_UID(), { type: 'text', text: 'สวัสดี' }, 'r3');
+  eq(lastReply()[0].text, G.MSG.ACCOUNT_INACTIVE, 'free text');
+  G.onFollow_(LINE_UID(), 'r4');
+  eq(lastReply()[0].text, G.MSG.ACCOUNT_INACTIVE, 'follow / re-add');
+  G.onPostback_(LINE_UID(), 'ck:in', 'r5');
+  eq(lastReply()[0].text, G.MSG.ACCOUNT_INACTIVE, 'stale postback');
+});
+t('registering a deactivated employee id says so, instead of "already bound"', () => {
+  deactivate();
+  G.onMessage_('U_newcomer', { type: 'text', text: 'ลงทะเบียน' }, 'r1');
+  eq(lastReply()[0].text, G.MSG.REG_ASK_ID, 'asks for the id');
+  G.onMessage_('U_newcomer', { type: 'text', text: 'A0124' }, 'r2');
+  eq(lastReply()[0].text, G.MSG.ACCOUNT_INACTIVE, 'deactivated id');
+  eq(G.regState_('U_newcomer'), null, 'registration state cleared');
+});
+t('a stranger is still told to register, and a live employee is unaffected', () => {
+  seed();
+  G.onMessage_('U_stranger', { type: 'text', text: 'สวัสดี' }, 'r1');
+  eq(lastReply()[0].text, G.MSG.REG_NOT_LINKED, 'stranger');
+  G.onMessage_(LINE_UID(), { type: 'text', text: 'สวัสดี' }, 'r2');
+  eq(lastReply()[0].text, G.MSG.NOT_UNDERSTOOD, 'active employee unaffected');
+});
+t('LIFF reports a deactivated account as its own error code', () => {
+  deactivate();
+  attach();
+  const r = G.handleLiffPunch_({ idToken: 'tok', action: 'me:today' });
+  eq(r.error, 'inactive', 'error code');
+  eq(r.text, G.MSG.ACCOUNT_INACTIVE, 'text');
+  ok(!r.ok, 'not ok');
+});
+t('nothing is written to the ledger for a deactivated employee', () => {
+  deactivate();
+  attach();
+  const before = G.readBlock_('ATTENDANCE').length;
+  G.handleLiffPunch_({ idToken: 'tok', action: 'in', lat: 13.7135, lng: 100.421, acc: 8 });
+  G.runAction_(LINE_UID(), 'in', 'r1');
+  eq(G.readBlock_('ATTENDANCE').length, before, 'rows');
+});
+
 console.log('\n=== ' + pass + ' passed, ' + failures.length + ' failed ===');
 if (failures.length) { failures.forEach(f => console.log('  ✗ ' + f)); process.exit(1); }

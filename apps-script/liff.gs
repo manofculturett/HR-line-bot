@@ -39,8 +39,12 @@ function handleLiffPunch_(payload) {
   }
 
   var employee = employeeByLineId_(userId);
+  // 'inactive' is distinct from 'not_linked' so the page can say the true thing; an older
+  // page treats both as "this person is not served" and disables everything, which is right.
   if (!usableEmployee_(employee)) {
-    return { ok: false, error: 'not_linked', text: MSG.REG_NOT_LINKED };
+    return employee
+      ? { ok: false, error: 'inactive', text: MSG.ACCOUNT_INACTIVE }
+      : { ok: false, error: 'not_linked', text: MSG.REG_NOT_LINKED };
   }
 
   // 'open' and 'fix' are LIFF-only, and deliberately NOT in ACTION_ALIASES: that map is

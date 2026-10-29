@@ -359,12 +359,14 @@
     // mapping in Code.gs ACTION_ALIASES serves both surfaces. Do not send a bare 'today'.
     return send({ idToken: idToken, action: 'me:today' })
       .then(function (res) {
-        if (res && res.error === 'not_linked') {
+        if (res && (res.error === 'not_linked' || res.error === 'inactive')) {
+          // Two different people: never registered, and deactivated by HR. Both get no
+          // buttons; only the sentence differs.
           ready = false;
           applyButtons();
-          elGreeting.textContent = 'ยังไม่ได้ลงทะเบียน';
+          elGreeting.textContent = res.error === 'inactive' ? 'บัญชีปิดการใช้งาน' : 'ยังไม่ได้ลงทะเบียน';
           elTodayText.textContent = '';
-          setStatus(res.text || 'กรุณาลงทะเบียนในแชทก่อน', 'warn');
+          setStatus(res.text || 'กรุณาติดต่อฝ่ายทรัพยากรบุคคล', 'warn');
           return;
         }
         renderToday(res);

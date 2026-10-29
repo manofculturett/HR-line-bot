@@ -58,11 +58,14 @@ function registrationTurn_(userId, rawText, cfg) {
       setRegState_(userId, state);
       return MSG.REG_UNKNOWN;                       // identical text: no oracle
     }
-    if (String(emp.values[COLS.EMPLOYEES.LINE_USER_ID]).trim()) {
-      clearRegState_(userId);
-      return MSG.REG_TAKEN;
-    }
+    // Deactivated FIRST: a leaver is usually still bound to their old LINE account, and
+    // answering "already bound" (with "contact HR to change it") describes the binding rather
+    // than the fact that matters — the account is closed.
     if (!isActive_(emp.values)) {
+      clearRegState_(userId);
+      return MSG.ACCOUNT_INACTIVE;
+    }
+    if (String(emp.values[COLS.EMPLOYEES.LINE_USER_ID]).trim()) {
       clearRegState_(userId);
       return MSG.REG_TAKEN;
     }
