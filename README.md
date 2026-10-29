@@ -134,6 +134,11 @@ same token the rich-menu status button sends — it writes nothing). Only the tw
 carry a location; registration stays a chat flow and the menu's status button still answers
 in the chat.
 
+After a successful punch the page also leaves the confirmation **in the chat**
+(`liff.sendMessages`, a message from the user — free, not a push) and closes itself, but only
+when that receipt actually landed. It needs the `chat_message.write` scope on the LIFF app;
+without it the punch still works and the page just stays open.
+
 Trust is split deliberately. **Who** is verified: the ID token is checked server-side, which
 is as strong as a signed webhook's `userId` and keeps the `?k=` secret out of public static
 hosting. **Where** is self-reported by the phone, so it is evidence, not proof — a
@@ -169,6 +174,23 @@ The two human paths write the real time, as one `out` row dated to **that day** 
 - **The employee** reports the time on the LIFF page, which shows a *ลืมลงเวลาเลิกงาน?* card
   only when a day is actually open (`source=self_report`, within `SELF_REPORT_DAYS`). The
   next 05:00 email repeats every self-reported time so HR can accept or query it.
+
+**The two things a "close" cannot fix** (v2.5). A day can be wrong in a way that has no open
+shift to close, so both are separate corrections — HR-only, both append-only:
+
+- **Nobody punched in at all.** `hrFixIn()` (same `FIX_EMP_ID` / `FIX_DATE` / `FIX_TIME`
+  properties) appends the check-in, `source=hr_fix`, note `forgot_in … added by HR`. It is
+  refused if that day already has a check-in — the sheet shows a day's *first* `in`, and two
+  candidates would be ambiguous. If the day has no `out` either it stays open, and the result
+  says so.
+- **The check-out was a mis-tap** (out at noon). `hrFixDay()` with the real, **later** time
+  appends a second `out`, note `corrected_out … (was 12:00)`. The sheet reads the day's last
+  `out` (`MAX`), so the later row wins and the hours change everywhere at once. An **earlier**
+  time is refused with the recorded one, because it could not change what the sheet shows —
+  and removing a too-late check-out would mean editing history.
+
+An employee can close their own forgotten day but **cannot claim a punch that never happened**:
+a claimed check-in is exactly what the location check exists to prevent.
 
 **The fallback, and why it is not a guess.** A day nobody confirms used to stay open for ever:
 a Friday shift forgotten before a weekend had no hours, no row, and — the moment the employee
@@ -555,7 +577,10 @@ rule).
 
 **Known limits of the fix paths:** an overnight shift (in 22:00, out 02:00) cannot be closed by
 `hrFixDay`/self-report, because the one-pair-per-day rule keys on the calendar date and the fix
-must be late enough to follow the check-in — such a day needs a manual row. `HR_MAIN!B3` is a
+must be late enough to follow the check-in — such a day needs a manual row. (Confirmed: this
+team works day shifts only, so the one-pair-per-day rule stands.) A check-out that is too
+**late** cannot be corrected by any path — a correction may only move it forward, since the
+sheet reads the last `out`. `HR_MAIN!B3` is a
 *latest-punch* test while the bot's own detector is a per-day pairing, so in the narrow case
 "an older day is dangling **and** a later day closed normally", B3 stays quiet while the 05:00
 report still lists the day; making B3 per-day needs a formula change in the live sheet

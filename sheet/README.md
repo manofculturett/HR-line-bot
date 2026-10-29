@@ -127,10 +127,10 @@ formulas will not match it.
 
 - `source` = `line` for a plain rich-menu tap, `liff-geo` for a punch that arrived with a
   location. Filtering `source = line` lists every punch nobody verified.
-- `source` = **`hr_fix`** or **`self_report`** on an `out` row that was *not* scanned: HR ran
-  `hrFixDay()`, or the employee reported the time on the LIFF page. These close a forgotten
-  day and are dated to that day, so they never appear on today's dashboard. `self_report` is a
-  claim; the 05:00 email repeats it to HR.
+- `source` = **`hr_fix`** or **`self_report`** on a row that was *not* scanned: HR ran
+  `hrFixDay()` / `hrFixIn()`, or the employee reported the time on the LIFF page. These close a
+  forgotten day (or add the check-in nobody made) and are dated to that day, so they never
+  appear on today's dashboard. `self_report` is a claim; the 05:00 email repeats it to HR.
 - `source` = **`auto_close`** on an `out` row the 05:00 sweep wrote because nobody confirmed the
   day: the time is `WORK_END`, the note says `auto_close YYYY-MM-DD HH:mm scheduled_end`, and it
   is a **placeholder** — when a person later supplies the real time, that row is rewritten
@@ -140,6 +140,11 @@ formulas will not match it.
   `geo:weak_fix 42m acc300m`, `geo:no_fix`. A forgotten check-out is greppable as
   `forgot_out YYYY-MM-DD` — written on the *next* check-in (the detection) and on the closing
   row itself (`closed by HR` / `self-reported`).
+- Two HR corrections (v2.5) are also greppable, and both leave the original rows in place:
+  `forgot_in YYYY-MM-DD HH:mm added by HR` on an `in` row (`hrFixIn`), and
+  `corrected_out YYYY-MM-DD HH:mm (was HH:mm)` on a **second** `out` row — the sheet shows the
+  day's last `out`, so the later row is the one that counts and the old time stays visible in
+  the note.
 - `verdict` in S:Z is one of `ok`, `far`, `weak_fix`, `no_fix`, `no_office`. `weak_fix`
   means the phone's accuracy was too poor to judge — indoors that is normal, and it is
   **not** evidence of anything.

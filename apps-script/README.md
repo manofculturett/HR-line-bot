@@ -71,7 +71,10 @@ hosting is required — do not move the page into HtmlService.
    (app type *Web app*). A LIFF app cannot be added to a Messaging API channel.
 2. That channel → **LIFF** tab → Add:
    - Endpoint URL: `https://<user>.github.io/HR-line-bot/liff/` (exact path, HTTPS)
-   - Size: Full · Scopes: `openid`, `profile`
+   - Size: Full · Scopes: `openid`, `profile`, **`chat_message.write`**
+     (`chat_message.write` is what lets the page leave the punch confirmation in the chat
+     with `liff.sendMessages` — a message from the user, so it costs no push quota. Without
+     it the punch still works and the page simply stays open; the result is on screen.)
 3. **Publish** the LINE Login channel. While it is *Developing* only admins and testers
    can open the LIFF URL and everyone else gets a 404.
 4. Basic settings → **Linked OA** → link the LINE Official Account.

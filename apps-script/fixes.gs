@@ -254,10 +254,161 @@ function closeOpenDay_(employee, dateStr, hhmm, source, cfg) {
            text: fill_(source === 'hr_fix' ? MSG.FIX_OK_HR : MSG.FIX_OK_SELF, vars) };
 }
 
+/**
+ * The EARLIEST `in` on one specific date, or null — the check-in the dashboard shows
+ * (`D5` takes the first row of the day). Hours on a corrected day are measured from this,
+ * so the sheet and this function cannot disagree about when the shift started.
+ */
+function dayFirstInPunch_(empId, dateStr, tz) {
+  var best = null;
+  readBlock_('ATTENDANCE').forEach(function (r) {
+    var v = r.values;
+    if (String(v[COLS.ATTENDANCE.EMPLOYEE_ID]).trim() !== String(empId).trim()) return;
+    if (String(v[COLS.ATTENDANCE.EVENT]).trim() !== 'in') return;
+    var ts = v[COLS.ATTENDANCE.TS];
+    if (!(ts instanceof Date)) return;
+    if (Utilities.formatDate(ts, tz, 'yyyy-MM-dd') !== dateStr) return;
+    if (!best || ts.getTime() < best.getTime()) best = ts;
+  });
+  return best;
+}
+
+/** The latest `out` on one specific date, or null. */
+function dayOutPunch_(empId, dateStr, tz) {
+  var best = null;
+  readBlock_('ATTENDANCE').forEach(function (r) {
+    var v = r.values;
+    if (String(v[COLS.ATTENDANCE.EMPLOYEE_ID]).trim() !== String(empId).trim()) return;
+    if (String(v[COLS.ATTENDANCE.EVENT]).trim() !== 'out') return;
+    var ts = v[COLS.ATTENDANCE.TS];
+    if (!(ts instanceof Date)) return;
+    if (Utilities.formatDate(ts, tz, 'yyyy-MM-dd') !== dateStr) return;
+    if (!best || ts.getTime() > best.getTime()) best = ts;
+  });
+  return best;
+}
+
+/**
+ * Correct a day that is ALREADY closed, because its check-out was wrong (the accidental tap
+ * at noon). Appends one `out` and leaves the old row alone.
+ *
+ * ⚠️ Why only a LATER time is accepted. The dashboard reads the day's LAST `out`
+ *    (`MAX(FILTER(...))`), so a later row wins and the corrected hours appear everywhere the
+ *    next time the sheet recalculates. An EARLIER row would lose to the existing one: the
+ *    sheet would keep showing the old time while the ledger claimed a correction — a silent
+ *    no-op, which is worse than a refusal. Fixing "too late" would mean editing or deleting a
+ *    row, and the ledger is append-only on purpose (any day must stay reconstructable).
+ */
+function correctOutDay_(employee, dateStr, hhmm, cfg) {
+  var empId = employee.values[COLS.EMPLOYEES.ID];
+  var tz = cfg.TZ;
+  var cleanDate = String(dateStr == null ? '' : dateStr).trim();
+  var cleanTime = String(hhmm == null ? '' : hhmm).trim();
+
+  var when = parseLocalDate_(cleanDate, cleanTime);
+  if (!when) return { ok: false, error: 'bad_input', text: MSG.FIX_BAD_INPUT };
+
+  var today = Utilities.formatDate(new Date(), tz, 'yyyy-MM-dd');
+  if (cleanDate >= today) return { ok: false, error: 'not_past', text: MSG.FIX_NOT_PAST };
+
+  var recorded = dayOutPunch_(empId, cleanDate, tz);
+  if (!recorded) return { ok: false, error: 'no_record', text: MSG.FIX_NO_RECORD };
+
+  if (when.getTime() <= recorded.getTime()) {
+    return { ok: false, error: 'not_later',
+             text: fill_(MSG.FIX_OUT_NOT_LATER, { time: hhmm_(recorded, tz) }) };
+  }
+
+  // Hours are measured from the day's FIRST check-in — the one the dashboard's D5 shows — not
+  // from the latest one, or a day with a stray extra `in` would report different hours here
+  // than in the sheet.
+  var anchorTs = dayFirstInPunch_(empId, cleanDate, tz);
+  if (!anchorTs) return { ok: false, error: 'no_record', text: MSG.FIX_NO_RECORD };
+  if (when.getTime() <= anchorTs.getTime()) {
+    return { ok: false, error: 'before_in',
+             text: fill_(MSG.FIX_BEFORE_IN, { time: hhmm_(anchorTs, tz) }) };
+  }
+
+  var worked = minutesBetween_(anchorTs, when);
+  var appended = false;
+  withLock_(function () {
+    // Re-read inside the lock: a second run must not append a second correction.
+    var nowLatest = dayOutPunch_(empId, cleanDate, tz);
+    if (!nowLatest || when.getTime() <= nowLatest.getTime()) return;
+    appendToBlock_('ATTENDANCE', [when, empId, 'out', 'hr_fix',
+      'corrected_out ' + cleanDate + ' ' + cleanTime +
+      ' (was ' + hhmm_(nowLatest, tz) + ')']);
+    logEvent_('', empId, 'hr_fix_out', 'out ' + cleanDate + ' ' + cleanTime +
+              ' corrected from ' + hhmm_(nowLatest, tz));
+    appended = true;
+  });
+  if (!appended) return { ok: false, error: 'not_later', text: MSG.FIX_OUT_NOT_LATER_AGAIN };
+
+  return { ok: true, worked: worked,
+           text: fill_(MSG.FIX_OUT_FIXED_HR, {
+             date: cleanDate, time: cleanTime,
+             hours: Math.floor(worked / 60), mins: worked % 60 }) };
+}
+
+/**
+ * Add the check-in the employee never made, for a day that has none. Appends one `in`.
+ *
+ * The dashboard shows the day's FIRST `in`, and this is only allowed when that day has no
+ * `in` at all, so there is exactly one candidate — no ordering ambiguity. A day that has no
+ * `out` either stays open, which is the correct state: `hrFixDay` (or the sweep) closes it.
+ */
+function addCheckInDay_(employee, dateStr, hhmm, cfg) {
+  var empId = employee.values[COLS.EMPLOYEES.ID];
+  var tz = cfg.TZ;
+  var cleanDate = String(dateStr == null ? '' : dateStr).trim();
+  var cleanTime = String(hhmm == null ? '' : hhmm).trim();
+
+  var when = parseLocalDate_(cleanDate, cleanTime);
+  if (!when) return { ok: false, error: 'bad_input', text: MSG.FIX_BAD_INPUT };
+
+  var today = Utilities.formatDate(new Date(), tz, 'yyyy-MM-dd');
+  if (cleanDate >= today) return { ok: false, error: 'not_past', text: MSG.FIX_NOT_PAST };
+
+  var existingIn = dayInPunch_(empId, cleanDate, tz);
+  if (existingIn) {
+    return { ok: false, error: 'already_in',
+             text: fill_(MSG.FIX_IN_EXISTS, { time: hhmm_(existingIn, tz) }) };
+  }
+
+  var out = dayOutPunch_(empId, cleanDate, tz);
+  if (out && when.getTime() >= out.getTime()) {
+    return { ok: false, error: 'after_out',
+             text: fill_(MSG.FIX_IN_AFTER_OUT, { time: hhmm_(out, tz) }) };
+  }
+
+  var appended = false;
+  withLock_(function () {
+    if (dayInPunch_(empId, cleanDate, tz)) return;          // a second run must not double it
+    appendToBlock_('ATTENDANCE', [when, empId, 'in', 'hr_fix',
+      'forgot_in ' + cleanDate + ' ' + cleanTime + ' added by HR']);
+    logEvent_('', empId, 'hr_fix_in', 'in ' + cleanDate + ' ' + cleanTime);
+    appended = true;
+  });
+  if (!appended) return { ok: false, error: 'already_in', text: MSG.FIX_IN_EXISTS_AGAIN };
+
+  var out2 = dayOutPunch_(empId, cleanDate, tz);
+  return { ok: true, open: !out2,
+           text: fill_(MSG.FIX_IN_OK_HR, {
+             date: cleanDate, time: cleanTime,
+             name: String(employee.values[COLS.EMPLOYEES.NAME])
+           }) + (out2 ? '' : '\n' + MSG.FIX_IN_STILL_OPEN) };
+}
+
 /* ---- HR ---- */
 
 /**
- * HR: close a forgotten check-out.
+ * HR: fix the check-out of a past day — the missing one, or the wrong one.
+ *
+ * Two cases, one command, chosen by the state of the day:
+ *   - the day is still OPEN (a forgotten check-out)  → append the `out`, as before;
+ *   - the day is CLOSED but its `out` is too early (the accidental tap) → append a LATER `out`.
+ * A too-late check-out is refused rather than guessed at: the sheet reads the day's last `out`,
+ * so an earlier correction could not change what anyone sees (see correctOutDay_).
  *
  * ⚠️ The editor's **Run** button calls a function with NO arguments — so with arguments this
  *    is not runnable from the UI at all. The request therefore comes from three Script
@@ -274,12 +425,44 @@ function closeOpenDay_(employee, dateStr, hhmm, source, cfg) {
  * properties: `hrFixDay('A0124', '2026-10-26', '19:30')`.
  *
  * Appends one `out` row (source `hr_fix`) dated to that day, so B3 stops listing the
- * employee and the check-in warning stops. Never edit or delete the original `in` — the
- * ledger is append-only, and the `in` is not the row that is wrong.
+ * employee and the check-in warning stops. Never edit or delete the original row — the
+ * ledger is append-only, and the recorded punch is not the row that is wrong.
  *
  * @returns {string} a one-line result, also written to the Executions log.
  */
 function hrFixDay(employeeId, dateStr, hhmm) {
+  return fixRequest_(employeeId, dateStr, hhmm, 'hrFixDay', function (employee, cfg, d, t) {
+    var r = closeOpenDay_(employee, d, t, 'hr_fix', cfg);
+    // 'not_open' means the day is already closed — which used to be the end of the road. A day
+    // whose check-out is wrong (the accidental tap) can still be pushed later; anything else
+    // (bad input, today, a time before the check-in) is a real answer and is returned as-is.
+    if (r.ok || r.error !== 'not_open') return r;
+    return correctOutDay_(employee, d, t, cfg);
+  });
+}
+
+/**
+ * HR: add the check-in an employee never made, for a day that has none.
+ *
+ * Same Run-button contract as hrFixDay (FIX_EMP_ID / FIX_DATE / FIX_TIME, cleared on success).
+ * The employee cannot do this from the LIFF page: a claimed check-in is what the location check
+ * exists to prevent, so it stays an HR decision. The row is written `source=hr_fix` with a
+ * `forgot_in` note, so it is never mistaken for a scanned punch.
+ */
+function hrFixIn(employeeId, dateStr, hhmm) {
+  return fixRequest_(employeeId, dateStr, hhmm, 'hrFixIn', function (employee, cfg, d, t) {
+    return addCheckInDay_(employee, d, t, cfg);
+  });
+}
+
+/**
+ * The shared shell for the HR fix functions.
+ *
+ * ⚠️ The editor's Run button calls a function with NO arguments, so the request must come from
+ *    Script Properties. Cleared after a SUCCESSFUL run (a stale request can never be applied
+ *    twice) and kept after a failure (one wrong value can be corrected and re-run).
+ */
+function fixRequest_(employeeId, dateStr, hhmm, fnName, work) {
   var props = PropertiesService.getScriptProperties();
   var fromProps = (employeeId === undefined || employeeId === null);
 
@@ -303,16 +486,15 @@ function hrFixDay(employeeId, dateStr, hhmm) {
     if (!employee) {
       out = 'ไม่พบรหัสพนักงาน "' + employeeId + '" ใน EMPLOYEES_LOG คอลัมน์ A';
     } else {
-      var r = closeOpenDay_(employee, dateStr, hhmm, 'hr_fix', cfg);
+      var r = work(employee, cfg, String(dateStr == null ? '' : dateStr).trim(),
+                   String(hhmm == null ? '' : hhmm).trim());
       ok = r.ok;
       out = r.ok
-        ? 'ปิดวัน ' + dateStr + ' ให้ ' + employee.values[COLS.EMPLOYEES.NAME] +
-          ' แล้ว: เลิกงาน ' + hhmm + ' (' + Math.floor(r.worked / 60) + ' ชม. ' +
-          (r.worked % 60) + ' นาที)'
+        ? String(employee.values[COLS.EMPLOYEES.NAME]) + ': ' + r.text
         : 'ไม่สำเร็จ: ' + r.text;
     }
   } catch (err) {
-    logError_('hrFixDay', err);
+    logError_(fnName, err);
     out = 'ผิดพลาด: ' + (err && err.message || err);
   }
 

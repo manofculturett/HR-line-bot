@@ -127,8 +127,12 @@ Two things worth knowing:
 
 **How `B3` clears.** Only by an `out` row dated to that day — `hrFixDay()` (HR), the
 employee's own report on the LIFF page (`source=hr_fix` / `self_report`), or the 05:00
-`auto_close` sweep, which uses `WORK_END` and marks the row as a placeholder. Nothing clears it
-by inventing a time. Note the corollary the formula enforces: because it reads
+`auto_close` sweep, which uses `WORK_END` and marks the row as a placeholder.
+
+A **correction** (v2.5) reaches this column through the same `MAX(...)`: an accidental early
+check-out is pushed later by appending a second `out`, and `E5` / `G5` follow the later row the
+next time the sheet recalculates. Nothing is edited, so the day stays reconstructable — and
+nothing clears it by inventing a time. Note the corollary the formula enforces: because it reads
 `MAXIFS(… "<"&TODAY())`, a fix row stamped *today* would never clear it, and a fix row stamped
 today would also show up in `E5` as today's check-out (with `D5` empty, so `F5` says
 `ยังไม่เข้างาน` and `G5` raises a ~780-minute early-leave flag). That is why both fix paths

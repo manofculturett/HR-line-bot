@@ -335,8 +335,43 @@ t('hrFixDay refuses a time before the check-in', () => {
 t('hrFixDay refuses an unknown employee id', () => {
   has(G.hrFixDay('A0999', '2026-10-26', '19:30'), 'ไม่พบรหัสพนักงาน', 'message');
 });
-t('hrFixDay refuses a day that is not open (closed on 24/10)', () => {
-  has(G.hrFixDay('A0124', '2026-10-24', '19:30'), 'ไม่พบวันที่ค้าง', 'message');
+// v2.5: a day that is already closed used to be untouchable — the accidental tap stayed on the
+// record for ever. A LATER check-out is now appended (the sheet reads the day's last `out`, so
+// the later row wins); an EARLIER one is refused, because it could not change what anyone sees.
+t('hrFixDay corrects a closed day when the new check-out is later (accidental early tap)', () => {
+  seed();
+  const before = G.readBlock_('ATTENDANCE');
+  const res = G.hrFixDay('A0124', '2026-10-24', '20:00');   // recorded out was 19:21
+  has(res, 'แก้ไขเวลาเลิกงานของวันที่ 2026-10-24 เป็น 20:00', 'result');
+  has(res, '7 ชม. 18 นาที', 'hours from the day\'s check-in 12:42');
+
+  const after = G.readBlock_('ATTENDANCE');
+  eq(after.length, before.length + 1, 'one row appended, nothing edited or deleted');
+  const added = after[after.length - 1].values;
+  eq(G.Utilities.formatDate(added[COLS.ATTENDANCE.TS], TZ, 'yyyy-MM-dd HH:mm'), '2026-10-24 20:00', 'ts');
+  eq(String(added[COLS.ATTENDANCE.SOURCE]), 'hr_fix', 'source');
+  eq(String(added[COLS.ATTENDANCE.NOTE]), 'corrected_out 2026-10-24 20:00 (was 19:21)', 'note names the old time');
+  // the original punch is still there, untouched — the ledger stays reconstructable
+  ok(before.some(r => String(r.values[COLS.ATTENDANCE.NOTE]) === 'geo:ok 12m' &&
+                      G.Utilities.formatDate(r.values[COLS.ATTENDANCE.TS], TZ, 'HH:mm') === '19:21'),
+     'the original 19:21 check-out is still in the ledger');
+  // and the premise of the correction: the day's latest `out` (what the sheet's MAX() reads)
+  let latest = null;
+  after.forEach(r => {
+    const v = r.values;
+    if (String(v[COLS.ATTENDANCE.EVENT]) !== 'out') return;
+    if (G.Utilities.formatDate(v[COLS.ATTENDANCE.TS], TZ, 'yyyy-MM-dd') !== '2026-10-24') return;
+    if (!latest || v[COLS.ATTENDANCE.TS] > latest) latest = v[COLS.ATTENDANCE.TS];
+  });
+  eq(G.Utilities.formatDate(latest, TZ, 'HH:mm'), '20:00', 'latest out is the correction');
+});
+t('hrFixDay refuses a correction that is EARLIER — it could not change the sheet', () => {
+  seed();
+  const res = G.hrFixDay('A0124', '2026-10-24', '19:00');   // recorded out 19:21
+  has(res, 'บันทึกเวลาเลิกงานของวันนั้นไว้ที่ 19:21', 'says what is recorded');
+  has(res, 'เฉพาะเวลาเลิกงานที่หลังกว่านั้น', 'explains the rule');
+  eq(G.readBlock_('ATTENDANCE').filter(r =>
+    String(r.values[COLS.ATTENDANCE.SOURCE]) === 'hr_fix').length, 0, 'nothing written');
 });
 t('hrFixDay refuses an impossible date and a malformed time', () => {
   has(G.hrFixDay('A0124', '2026-02-31', '19:30'), 'รูปแบบวันที่', 'bad date');
@@ -361,11 +396,19 @@ t('hrFixDay accepts a valid fix, then B3-equivalent state is clean', () => {
   const logRows = G.readBlock_('LOG').filter(r => String(r.values[COLS.LOG.ACTION]) === 'hr_fix');
   eq(logRows.length, 1, 'hr_fix rows in LOG');
 });
-t('hrFixDay twice on the same day is refused (one out per day)', () => {
-  has(G.hrFixDay('A0124', '2026-10-26', '20:00'), 'ไม่พบวันที่ค้าง', 'second fix');
-  eq(G.readBlock_('ATTENDANCE').filter(r =>
-    String(r.values[COLS.ATTENDANCE.EVENT]) === 'out' &&
-    String(r.values[COLS.ATTENDANCE.SOURCE]) === 'hr_fix').length, 1, 'hr_fix out rows');
+// v2.5 replaces the old "twice is refused": a second call with a LATER time is a correction
+// (HR closed 19:30, then remembered 20:00). The employee-facing punch rule is unchanged and is
+// asserted separately — only HR can touch a past day, and every step is marked in the ledger.
+t('a second correction is allowed and marked, and the punch rules are untouched', () => {
+  const res = G.hrFixDay('A0124', '2026-10-26', '20:00');   // closed at 19:30 by the test above
+  has(res, 'แก้ไขเวลาเลิกงานของวันที่ 2026-10-26 เป็น 20:00', 'corrects');
+  has(res, '7 ชม. 2 นาที', 'hours from 12:58');
+  eq(String(G.readBlock_('ATTENDANCE').pop().values[COLS.ATTENDANCE.NOTE]),
+     'corrected_out 2026-10-26 20:00 (was 19:30)', 'note names the previous time');
+  const fixes = G.readBlock_('LOG').filter(r => String(r.values[COLS.LOG.ACTION]) === 'hr_fix_out');
+  eq(fixes.length, 1, 'one hr_fix_out LOG row');
+  // the day still reads closed for the bot, so no dangling-day warning reappears
+  eq(G.openDaysByEmployee_(TZ).A0124, undefined, 'no open day');
 });
 
 // ── 4. the employee's own path, through the LIFF route ─────────────────────────
@@ -585,8 +628,14 @@ t('a real time REPLACES the placeholder row — never a second out', () => {
   eq(G.readBlock_('ATTENDANCE').filter(r =>
        String(r.values[COLS.ATTENDANCE.SOURCE]) === 'auto_close').length, 0, 'placeholders left');
 });
-t('after a replacement the day is closed for good (a second fix is refused)', () => {
-  has(G.hrFixDay('A0124', '2026-10-16', '19:00'), 'ไม่พบวันที่ค้าง', 'second fix');
+t('after a replacement the day is closed for good (an identical "fix" changes nothing)', () => {
+  // v2.5: the refusal now comes from the correction rule (nothing later to add), not from
+  // "no open day" — either way a second identical fix writes nothing.
+  const rows = G.readBlock_('ATTENDANCE').length;
+  // the same time the replacement wrote: nothing later to add, so nothing happens
+  has(G.hrFixDay('A0124', '2026-10-16', '17:20'),
+      'บันทึกเวลาเลิกงานของวันนั้นไว้ที่ 17:20', 'identical fix refused');
+  eq(G.readBlock_('ATTENDANCE').length, rows, 'no row written');
 });
 t("the employee's own report also replaces a placeholder, and writes no geo row", () => {
   seed();
@@ -949,6 +998,79 @@ t('nothing is written to the ledger for a deactivated employee', () => {
   G.handleLiffPunch_({ idToken: 'tok', action: 'in', lat: 13.7135, lng: 100.421, acc: 8 });
   G.runAction_(LINE_UID(), 'in', 'r1');
   eq(G.readBlock_('ATTENDANCE').length, before, 'rows');
+});
+
+// ══════════════════════════════ v2.5.0 ═══════════════════════════════════════════
+console.log('\n=== v2.5.0 corrections ===\n');
+
+t('hrFixIn adds the check-in nobody made, and says the day still needs a check-out', () => {
+  seed();                                            // 2026-10-20 has no punches at all
+  const before = G.readBlock_('ATTENDANCE').length;
+  const res = G.hrFixIn('A0124', '2026-10-20', '09:05');
+  has(res, 'เพิ่มเวลาเข้างานของวันที่ 2026-10-20 เป็น 09:05', 'result');
+  has(res, 'ยังไม่มีเวลาเลิกงาน', 'says the day is still open');
+  eq(G.readBlock_('ATTENDANCE').length, before + 1, 'one row');
+  const added = G.readBlock_('ATTENDANCE').pop().values;
+  eq(String(added[COLS.ATTENDANCE.EVENT]), 'in', 'event');
+  eq(String(added[COLS.ATTENDANCE.SOURCE]), 'hr_fix', 'source');
+  eq(String(added[COLS.ATTENDANCE.NOTE]), 'forgot_in 2026-10-20 09:05 added by HR', 'note');
+  // the day is now open, so the normal close path works on it
+  ok(G.openDaysByEmployee_(TZ).A0124, 'the added check-in is an open day');
+  has(G.hrFixDay('A0124', '2026-10-20', '18:10'), 'ปิดวัน 2026-10-20', 'closed afterwards');
+  const stillOpen = (G.openDaysByEmployee_(TZ).A0124 || [])
+    .filter(p => G.Utilities.formatDate(p.ts, TZ, 'yyyy-MM-dd') === '2026-10-20');
+  eq(stillOpen.length, 0, 'the 20th is closed (other dangling days in the fixture are not ours)');
+});
+t('hrFixIn refuses a day that already has a check-in', () => {
+  seed();
+  const res = G.hrFixIn('A0124', '2026-10-26', '09:00');   // already checked in 12:58
+  has(res, 'มีการเข้างานแล้วเมื่อ 12:58', 'message');
+  eq(G.readBlock_('ATTENDANCE').filter(r =>
+    String(r.values[COLS.ATTENDANCE.NOTE]).indexOf('forgot_in') === 0).length, 0, 'nothing written');
+});
+t('hrFixIn refuses a check-in after the recorded check-out', () => {
+  seed();
+  // a stray `out` with no `in` on that day: what the guard is for.
+  // ⚠️ The Date must be built INSIDE the sandbox — a Date from Node's realm fails the
+  //    code-under-test's `ts instanceof Date` and the row becomes invisible.
+  G.appendToBlock_('ATTENDANCE',
+    [vm.runInContext('new Date(2026, 9, 25, 17, 0, 0)', sandbox), 'A0124', 'out', 'line', '']);
+  eq(String(G.dayOutPunch_('A0124', '2026-10-25', TZ) ? 'seen' : 'missed'), 'seen', 'row is readable');
+  const res = G.hrFixIn('A0124', '2026-10-25', '18:00');
+  has(res, 'ต้องก่อนเวลาเลิกงานของวันนั้น (17:00)', 'message');
+});
+t('hrFixIn refuses today and the future, like every other fix path', () => {
+  seed();
+  has(G.hrFixIn('A0124', '2026-10-27', '09:00'), 'เฉพาะวันก่อนหน้า', 'today');
+  has(G.hrFixIn('A0124', '2026-11-02', '09:00'), 'เฉพาะวันก่อนหน้า', 'future');
+});
+t('hrFixDay says plainly when a day has no record at all', () => {
+  seed();
+  has(G.hrFixDay('A0124', '2026-10-20', '18:00'), 'ไม่พบการลงเวลาของวันนั้น', 'no record');
+  has(G.hrFixDay('A0124', '2026-10-20', '18:00'), 'hrFixIn', 'points at the right command');
+});
+t('the employee cannot add a check-in from the LIFF page (a claim is not a punch)', () => {
+  seed(); attach();
+  // 'fix' only closes a day that already has an open check-in, so a day with none is refused
+  const r = G.handleLiffPunch_({ idToken: 'tok', action: 'fix', date: '2026-10-20', hhmm: '18:00' });
+  ok(!r.ok, 'refused');
+  eq(r.error, 'not_open', 'reason');
+  // and the punch actions have no date parameter at all — they always mean "now"
+  const before = G.readBlock_('ATTENDANCE').length;
+  G.handleLiffPunch_({ idToken: 'tok', action: 'in', date: '2026-10-20', hhmm: '09:00' });
+  const added = G.readBlock_('ATTENDANCE').pop().values;
+  eq(G.readBlock_('ATTENDANCE').length, before + 1, 'one punch');
+  eq(G.Utilities.formatDate(added[COLS.ATTENDANCE.TS], TZ, 'yyyy-MM-dd'), '2026-10-27',
+     'a past date in the payload is ignored — the punch is stamped now');
+});
+t('hrFixIn() is runnable from the Run button (properties, cleared on success)', () => {
+  seed();
+  sandbox.PROPS.FIX_EMP_ID = 'A0124';
+  sandbox.PROPS.FIX_DATE = '2026-10-20';
+  sandbox.PROPS.FIX_TIME = '08:45';
+  has(G.hrFixIn(), 'เพิ่มเวลาเข้างานของวันที่ 2026-10-20', 'ran');
+  eq(Object.keys(sandbox.PROPS).filter(k => k.indexOf('FIX_') === 0).length, 0, 'properties cleared');
+  has(G.hrFixIn(), 'ยังไม่ได้ระบุคำขอ', 'a bare run with no request says what to set');
 });
 
 console.log('\n=== ' + pass + ' passed, ' + failures.length + ' failed ===');

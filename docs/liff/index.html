@@ -398,7 +398,10 @@
     btnFix.textContent = 'กำลังบันทึก…';
     send({ idToken: idToken, action: 'fix', date: date, hhmm: hhmm })
       .then(function (res) {
-        setStatus((res && res.text) || 'ไม่ได้รับคำตอบจากเซิร์ฟเวอร์', (res && res.error) ? 'error' : 'ok');
+        var text = (res && res.text) || 'ไม่ได้รับคำตอบจากเซิร์ฟเวอร์';
+        var failed = !!(res && res.error);
+        setStatus(text, failed ? 'error' : 'ok');
+        if (!failed) return receiptThenClose(text);
       })
       .catch(function () { setStatus(networkMessage(), 'error'); })
       .then(function () {
@@ -426,17 +429,50 @@
       })
       .then(function (res) {
         var text = (res && res.text) ? res.text : 'ไม่ได้รับคำตอบจากเซิร์ฟเวอร์';
+        var shown = text + (geoNote ? '\n\n📍 ' + geoNote : '');
         var kind = 'ok';
         if (res && (res.error || res.blocked)) kind = res.blocked ? 'warn' : 'error';
         else if (text.indexOf('⚠️') !== -1 || geoNote) kind = 'warn';
-        setStatus(text + (geoNote ? '\n\n📍 ' + geoNote : ''), kind);
+        setStatus(shown, kind);
         if (kind === 'ok' && navigator.vibrate) navigator.vibrate(30);
+        // A refusal is not a receipt: nothing happened, so nothing goes in the chat.
+        if (kind !== 'error') return receiptThenClose(shown);
       })
       .catch(function () { setStatus(networkMessage(), 'error'); })
       .then(function () {
         setBusy(false);
         return refresh();
       });
+  }
+
+  // ── the receipt ────────────────────────────────────────────────────────────
+  /**
+   * Leave the confirmation in the CHAT, not only on this page. Without it, a punch that
+   * succeeded leaves nothing in the timeline — the employee closes the page and has no record.
+   *
+   * Free: `liff.sendMessages` sends the message AS THE USER, which is not a push and costs
+   * nothing against the OA's monthly quota. Optional too: it needs the LIFF app's
+   * `chat_message.write` scope, so a missing scope must never break a punch — the result is
+   * already on screen, and the page is only auto-closed when the receipt actually landed.
+   */
+  function sendReceipt(text) {
+    if (!text) return Promise.resolve(false);
+    if (typeof liff === 'undefined' || typeof liff.sendMessages !== 'function') {
+      return Promise.resolve(false);
+    }
+    return liff.sendMessages([{ type: 'text', text: text }])
+      .then(function () { return true; })
+      .catch(function (err) { console.warn('receipt not sent:', err); return false; });
+  }
+
+  /** Send the receipt, then close the page — but only if the receipt is in the chat. */
+  function receiptThenClose(text) {
+    return sendReceipt(text).then(function (sent) {
+      if (sent && typeof liff.closeWindow === 'function') {
+        setTimeout(function () { try { liff.closeWindow(); } catch (e) { /* not in LIFF */ } }, 1600);
+      }
+      return sent;
+    });
   }
 
   // ── transport ──────────────────────────────────────────────────────────────

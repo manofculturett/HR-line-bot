@@ -4,6 +4,60 @@ Version markers follow the tags on `main`. The system is live, so "deployed" is 
 separately from "committed" — a tag whose code was never pushed with `clasp deploy` is not
 running.
 
+## v2.5.0 — 2026-10-29
+
+The one state the system could not repair. A wrong punch — the accidental tap, the morning
+nobody remembered to punch in — stayed on the record for ever: `hrFixDay` and the employee's
+own report only close a day that is still **open**, and editing cells is exactly what an
+append-only ledger forbids.
+
+**Deployed:** Apps Script version 23 on the same deployment id; the health check reports
+`"v2.5.0"`. The receipt needs one console change (below).
+
+### Added
+
+- **`hrFixIn()` — add the check-in nobody made.** Same Run-button contract as `hrFixDay`
+  (`FIX_EMP_ID` / `FIX_DATE` / `FIX_TIME`, cleared on success). Refused if that day already has
+  a check-in (says what time it recorded) or if the time is not before the day's check-out.
+  Written `source=hr_fix`, note `forgot_in YYYY-MM-DD HH:mm added by HR`. If the day has no
+  check-out either, it stays open — the message says so and points at `hrFixDay`.
+- **A receipt in the chat.** After a successful punch or self-report, the page posts the same
+  confirmation into the LINE timeline with `liff.sendMessages` — as the user, so it is **not a
+  push** and costs nothing against the monthly quota — and then closes itself. Only when the
+  receipt actually landed: a refusal, a network failure, or a LIFF app without the
+  `chat_message.write` scope leaves the page open with the result on screen.
+  **Console step:** LINE Login channel → LIFF app → scopes, add `chat_message.write`.
+
+### Changed
+
+- **`hrFixDay` now also corrects a day that is already closed.** Its check-out can be pushed
+  **later** (the accidental tap at noon), which the sheet picks up because it reads the day's
+  last `out` (`MAX`). Appended as `source=hr_fix`, note
+  `corrected_out YYYY-MM-DD HH:mm (was HH:mm)`, one `hr_fix_out` row in `LOG`. An **earlier**
+  time is refused with the recorded one, because it could not change what anyone sees — and
+  fixing "too late" would need an edit or a delete.
+- Hours on a corrected day are measured from the day's **first** check-in, the one the
+  dashboard's `D5` shows, so the reply and the sheet cannot disagree. (Caught by a test: the
+  first draft used the latest check-in and reported 39 minutes where the sheet said 7h18.)
+- `hrFixDay` / `hrFixIn` share one property-driven shell (`fixRequest_`), so their clearing and
+  error behaviour cannot drift apart.
+
+### Not done, deliberately
+
+- **An employee still cannot claim a check-in** from the LIFF page. A claimed punch is the
+  thing the location check exists to prevent, so a missing check-in stays an HR decision.
+- **A check-out that is too LATE cannot be corrected** by any path — the sheet takes the last
+  `out`, so a correction can only go forward.
+
+### Notes
+
+- 69 assertions (8 new, 2 rewritten: they asserted that a closed day could not be touched,
+  which is the behaviour this release changes). One new test builds its `Date` inside the
+  sandbox after a cross-realm `instanceof Date` made a seeded row invisible — the harness
+  pitfall, now asserted explicitly.
+- Page verified in a 390 px browser: receipt payload equals the on-screen text, close fires
+  only after the receipt, and a rejected `sendMessages` leaves everything usable.
+
 ## v2.4.1 — 2026-10-29
 
 Found while auditing the employee side of the bot, not by any test: **a deactivated employee

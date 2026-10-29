@@ -63,6 +63,23 @@ var MSG = {
                    'เลิกงาน {time} รวม {hours} ชม. {mins} นาที\n' +
                    '⚠️ เวลานี้เป็นการแจ้งเอง (ไม่ได้สแกน) HR จะเห็นว่าแจ้งเอง',
 
+  // --- corrections HR can make to a day that is already recorded (v2.5) ---
+  // A wrong check-out can only be pushed LATER: the sheet reads the day's last `out`, so an
+  // earlier correction would change nothing there while the ledger claimed it had.
+  FIX_NO_RECORD:        'ไม่พบการลงเวลาของวันนั้นทั้งเข้างานและเลิกงาน\n' +
+                        'ถ้าลืมเข้างาน ให้ใช้ hrFixIn (ตั้ง FIX_EMP_ID / FIX_DATE / FIX_TIME)',
+  FIX_OUT_NOT_LATER:    'ระบบบันทึกเวลาเลิกงานของวันนั้นไว้ที่ {time} แล้ว\n' +
+                        'แก้ไขได้เฉพาะเวลาเลิกงานที่หลังกว่านั้น (ระบบไม่ลบประวัติเดิม)',
+  FIX_OUT_NOT_LATER_AGAIN: 'ไม่ได้แก้ไข: เวลาที่ระบุไม่หลังกว่าเวลาที่บันทึกไว้',
+  FIX_OUT_FIXED_HR:     'แก้ไขเวลาเลิกงานของวันที่ {date} เป็น {time} แล้ว\n' +
+                        'รวม {hours} ชม. {mins} นาที — ระบบเก็บรายการเดิมไว้ในประวัติ',
+  FIX_IN_EXISTS:        'วันนั้นมีการเข้างานแล้วเมื่อ {time}\n' +
+                        'ระบบแก้เวลาเข้างานที่บันทึกไว้ไม่ได้ — ถ้าเวลาไม่ถูกต้อง กรุณาติดต่อ HR',
+  FIX_IN_EXISTS_AGAIN:  'ไม่ได้เพิ่ม: วันนั้นมีการเข้างานอยู่แล้ว',
+  FIX_IN_AFTER_OUT:     'เวลาเข้างานต้องก่อนเวลาเลิกงานของวันนั้น ({time})',
+  FIX_IN_OK_HR:         'เพิ่มเวลาเข้างานของวันที่ {date} เป็น {time} ให้ {name} แล้ว',
+  FIX_IN_STILL_OPEN:    'วันนั้นยังไม่มีเวลาเลิกงาน — ใช้ hrFixDay เพื่อปิดวัน',
+
   // Sent when a punch arrives from the chat (typed word / postback) while PUNCH_REQUIRE_GEO
   // is on. LINE turns the bare URL into a tappable link.
   PUNCH_NEEDS_LIFF:

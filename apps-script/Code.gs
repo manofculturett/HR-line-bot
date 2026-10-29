@@ -86,7 +86,7 @@ function doGet(e) {
   return textOut_(JSON.stringify({
     ok: true,
     role: 'hr-line-bot',
-    version: 'v2.4.1',   // bump with the deploy — this is how a stale deployment is spotted
+    version: 'v2.5.0',   // bump with the deploy — this is how a stale deployment is spotted
     timezone: Session.getScriptTimeZone()
   }));
 }
